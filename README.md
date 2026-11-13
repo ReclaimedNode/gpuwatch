@@ -6,15 +6,24 @@ One small container (the *hub*) connects to each machine over SSH, runs a tiny c
 
 ![Fleet overview](docs/screenshots/overview.png)
 
+Click ⧉ on any machine to open it in a floating window. Windows can be moved, resized and stacked, and they remember where you left them:
+
+![Detail windows](docs/screenshots/windows.png)
+
 <table>
 <tr>
-<td><img src="docs/screenshots/nvidia-expanded.png" alt="4x NVIDIA detail view"></td>
-<td><img src="docs/screenshots/apple-expanded.png" alt="Apple Silicon detail view"></td>
+<td><img src="docs/screenshots/window-nvidia.png" alt="4x NVIDIA detail window"></td>
+<td><img src="docs/screenshots/window-apple.png" alt="Apple Silicon detail window"></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/nvidia-expanded.png" alt="nvtop-style expanded card"></td>
+<td><img src="docs/screenshots/nas-expanded.png" alt="NAS with Plex, Jellyfin and Frigate"></td>
 </tr>
 </table>
 
 ## Features
 
+- **Detail windows:** ⧉ opens a machine in a floating window that you can move, resize and stack. It shows per-GPU tiles with utilization rings and VRAM/power bars, headline tok/s with a sparkline, and a serving panel (prefill/decode tok/s, TTFT p50/p95, running/waiting, KV cache %), plus graphs and processes. Esc closes the top one.
 - **Fleet overview:** one card per machine with GPU usage (a segment per GPU), GPU memory used/free, power, temperature, host CPU/RAM and status. Click a card for the full nvtop-style view: per-GPU lines, PCIe RX/TX, 1/5/15-minute graphs and a process table.
 - **NVIDIA** via `nvidia-smi`: utilization, VRAM, clocks, temperature, fan, power, PCIe, and per-process VRAM.
 - **Apple Silicon** via `ioreg`/`top` (plus `powermetrics` when allowed): GPU utilization, GPU-allocated memory against the wired limit (`iogpu.wired_limit_mb`), clock, power and thermal state.
@@ -22,8 +31,8 @@ One small container (the *hub*) connects to each machine over SSH, runs a tiny c
 
   | Server | Shows |
   |---|---|
-  | vLLM | model, running/queued requests, generation tok/s |
-  | llama.cpp `llama-server` | model, busy slots (+ tok/s and queue with `--metrics`) |
+  | vLLM | model, running/queued, prefill and decode tok/s, TTFT p50/p95, KV cache % |
+  | llama.cpp `llama-server` | model, busy slots (+ prefill/decode tok/s, queue and KV cache with `--metrics`) |
   | Ollama | loaded models |
   | oMLX and other OpenAI-compatible APIs | model list |
   | InvokeAI / ComfyUI | generating or idle, queue |
@@ -99,7 +108,7 @@ Both endpoints take the API token from **Manage machines** as `Authorization: Be
   static_configs: [{ targets: ["gpuwatch-host:9180"] }]
 ```
 
-Metrics: `gpuwatch_up`, `gpuwatch_gpu_utilization_percent`, `gpuwatch_gpu_memory_used_bytes`/`_total_bytes`, `gpuwatch_gpu_power_watts`, `gpuwatch_gpu_temperature_celsius`, `gpuwatch_host_*`, `gpuwatch_service_requests_running|queued`, `gpuwatch_service_tokens_per_second`.
+Metrics: `gpuwatch_up`, `gpuwatch_gpu_utilization_percent`, `gpuwatch_gpu_memory_used_bytes`/`_total_bytes`, `gpuwatch_gpu_power_watts`, `gpuwatch_gpu_temperature_celsius`, `gpuwatch_host_*`, `gpuwatch_service_requests_running|queued`, `gpuwatch_service_tokens_per_second`, `gpuwatch_service_prefill_tokens_per_second`, `gpuwatch_service_kv_cache_usage_ratio`, `gpuwatch_service_ttft_p50_seconds|p95_seconds`.
 
 ```yaml
 # Homepage services.yaml

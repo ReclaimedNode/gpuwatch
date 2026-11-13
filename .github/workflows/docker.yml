@@ -15,7 +15,7 @@ jobs:
   test-and-publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Syntax checks
         run: |
@@ -40,7 +40,7 @@ jobs:
             --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add SETUID --cap-add SETGID \
             --security-opt no-new-privileges:true \
             -e GPUWATCH_DEMO_FLEET=1 -e GPUWATCH_PASSWORD=ci-test-passphrase -v gwdata:/data gpuwatch:test
-          for i in $(seq 1 30); do curl -fsS localhost:9180/healthz >/dev/null && break; sleep 1; done
+          for i in $(seq 1 30); do curl -fsS localhost:9180/healthz >/dev/null 2>&1 && break; sleep 1; done
           echo "-- anonymous requests are refused"
           test "$(curl -s -o /dev/null -w '%{http_code}' localhost:9180/config)" = 401
           test "$(curl -s -o /dev/null -w '%{http_code}' localhost:9180/metrics)" = 401
@@ -56,8 +56,8 @@ jobs:
           sleep 3
           curl -s -b jar "localhost:9180/proxy/10.0.0.30/stats" | python3 -c "import json,sys; j=json.load(sys.stdin); assert len(j['gpus'])==4, j"
           echo "-- runs as nobody"
-          docker top gw -eo user,args | tee /tmp/top
-          grep "gpuwatch.py" /tmp/top | grep -q "^nobody"
+          docker top gw -eo pid,user,args | tee /tmp/top
+          grep "gpuwatch.py" /tmp/top | awk '{print $2}' | grep -qx nobody
           docker logs gw
 
       - name: Log in to GHCR

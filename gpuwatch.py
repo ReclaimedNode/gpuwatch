@@ -537,6 +537,52 @@ def prom_sum(text, name):
     return tot
 
 
+def prom_avg(text, name):
+    vals = []
+    n = len(name)
+    for l in text.splitlines():
+        if l.startswith(name) and len(l) > n and l[n] in " {":
+            try:
+                vals.append(float(l.rsplit(None, 1)[1]))
+            except (ValueError, IndexError):
+                pass
+    return sum(vals) / len(vals) if vals else None
+
+
+def prom_hist(text, name):
+    """Cumulative histogram buckets {le: count}, summed over label sets."""
+    out, pre = {}, name + "_bucket{"
+    for l in text.splitlines():
+        if l.startswith(pre):
+            m = re.search(r'le="([^"]+)"', l)
+            if not m:
+                continue
+            try:
+                v = float(l.rsplit(None, 1)[1])
+            except (ValueError, IndexError):
+                continue
+            le = float("inf") if m.group(1) in ("+Inf", "Inf") else float(m.group(1))
+            out[le] = out.get(le, 0.0) + v
+    return out
+
+
+def hist_quantile(buckets, q):
+    items = sorted(buckets.items())
+    if not items or items[-1][1] <= 0:
+        return None
+    target = q * items[-1][1]
+    prev_le, prev_c = 0.0, 0.0
+    for le, c in items:
+        if c >= target:
+            if le == float("inf"):
+                return prev_le
+            if c == prev_c:
+                return le
+            return prev_le + (le - prev_le) * (target - prev_c) / (c - prev_c)
+        prev_le, prev_c = le, c
+    return None
+
+
 def listening_ports():
     """{port: (connect_host, process_name)} for TCP listeners (process names only where visible)."""
     ports = {}
@@ -663,6 +709,7 @@ class Services:
         self.found = []          # list of service dicts (with private _base/_key)
         self.counters = {}       # base -> (tokens, time)
         self.negative = {}       # base -> time it was last found to be "not a known service"
+        self.ttft_hist = {}      # base -> deque of (time, TTFT histogram buckets)
         threading.Thread(target=self._loop, daemon=True).start()
 
     def snapshot(self):
@@ -755,7 +802,7 @@ class Services:
             for f in found:   # keep last live numbers until the next poll
                 o = old.get(f["_base"])
                 if o:
-                    for k in ("running", "queued", "tps", "loaded"):
+                    for k in ("running", "queued", "tps", "prefill_tps", "kv_cache", "ttft_p50", "ttft_p95", "loaded"):
                         if k in o:
                             f.setdefault(k, o[k])
             self.found = found
@@ -771,19 +818,36 @@ class Services:
                 st, body = http_get(base + "/metrics", key=key, timeout=1.5)
                 if st == 200 and body:
                     if kind == "vllm":
-                        run_, que, tok = (prom_sum(body, "vllm:num_requests_running"),
-                                          prom_sum(body, "vllm:num_requests_waiting"),
-                                          prom_sum(body, "vllm:generation_tokens_total"))
+                        run_, que = prom_sum(body, "vllm:num_requests_running"), prom_sum(body, "vllm:num_requests_waiting")
+                        tok, ptok = prom_sum(body, "vllm:generation_tokens_total"), prom_sum(body, "vllm:prompt_tokens_total")
+                        kv = prom_avg(body, "vllm:kv_cache_usage_perc")
+                        if kv is None:
+                            kv = prom_avg(body, "vllm:gpu_cache_usage_perc")
+                        ttft = prom_hist(body, "vllm:time_to_first_token_seconds")
                     else:
-                        run_, que, tok = (prom_sum(body, "llamacpp:requests_processing"),
-                                          prom_sum(body, "llamacpp:requests_deferred"),
-                                          prom_sum(body, "llamacpp:tokens_predicted_total"))
+                        run_, que = prom_sum(body, "llamacpp:requests_processing"), prom_sum(body, "llamacpp:requests_deferred")
+                        tok, ptok = prom_sum(body, "llamacpp:tokens_predicted_total"), prom_sum(body, "llamacpp:prompt_tokens_total")
+                        kv, ttft = prom_avg(body, "llamacpp:kv_cache_usage_ratio"), {}
                     upd["running"], upd["queued"] = run_, que
-                    if tok is not None:
-                        prev = self.counters.get(base)
-                        if prev and now > prev[1] and tok >= prev[0]:
-                            upd["tps"] = round((tok - prev[0]) / (now - prev[1]), 1)
-                        self.counters[base] = (tok, now)
+                    if kv is not None:
+                        upd["kv_cache"] = round(max(0.0, min(1.0, kv)), 4)
+                    for field, val in (("tps", tok), ("prefill_tps", ptok)):
+                        if val is None:
+                            continue
+                        prev = self.counters.get((base, field))
+                        if prev and now > prev[1] and val >= prev[0]:
+                            upd[field] = round((val - prev[0]) / (now - prev[1]), 1)
+                        self.counters[(base, field)] = (val, now)
+                    if ttft:   # TTFT percentiles over the last ~60 s of requests
+                        hq = self.ttft_hist.setdefault(base, deque())
+                        hq.append((now, ttft))
+                        while len(hq) > 1 and now - hq[0][0] > 60:
+                            hq.popleft()
+                        old = hq[0][1]
+                        delta = {le: c - old.get(le, 0.0) for le, c in ttft.items()}
+                        if max(delta.values() or [0]) > 0:
+                            upd["ttft_p50"] = hist_quantile(delta, 0.5)
+                            upd["ttft_p95"] = hist_quantile(delta, 0.95)
                 elif kind == "llamacpp":
                     st, body = http_get(base + "/slots", key=key)
                     j = jload(body) if st == 200 else None
@@ -824,8 +888,10 @@ class Services:
 
 def demo_services(mode):
     if mode == "nvidia1":
+        t = time.time()
         return [{"kind": "vllm", "name": "vLLM", "port": 8000, "models": ["qwen3.8-27b"], "running": 1, "queued": 0,
-                 "tps": round(28 + 6 * math.sin(time.time() / 3), 1)}]
+                 "tps": round(28 + 6 * math.sin(t / 3), 1), "prefill_tps": round(410 + 120 * math.sin(t / 5), 1),
+                 "kv_cache": round(0.22 + 0.08 * math.sin(t / 9), 3), "ttft_p50": 0.21, "ttft_p95": 0.48}]
     if mode == "applemax":
         return [{"kind": "llamacpp", "name": "llama.cpp", "port": 8001, "models": ["gemma4-12b"], "running": 1},
                 {"kind": "llamacpp", "name": "llama.cpp", "port": 8002, "models": ["qwen3-1.7b"], "running": 0},
@@ -843,7 +909,9 @@ def demo_services(mode):
     t = time.time()
     r = int(2 + 2 * math.sin(t / 7))
     return [{"kind": "vllm", "name": "vLLM", "port": 8000, "models": ["dsv41-flash"], "running": r, "queued": max(0, r - 3),
-             "tps": round(30 + 25 * math.sin(t / 5), 1) if r else 0.0}]
+             "tps": round(30 + 25 * math.sin(t / 5), 1) if r else 0.0,
+             "prefill_tps": round(900 + 500 * math.sin(t / 4), 1) if r else 0.0,
+             "kv_cache": round(0.35 + 0.25 * math.sin(t / 11), 3), "ttft_p50": 0.62, "ttft_p95": 1.85}]
 
 
 # ----------------------------------------------------------------------------- agent
@@ -1395,7 +1463,7 @@ def prometheus(snaps):
         for labels, v in rows:
             if v is not None:
                 lines.append("gpuwatch_%s%s %s" % (name, labels, float(v)))
-    up, util, mu, mt, pw, tp, hc, hm, hmt, sr, sq, st = ([] for _ in range(12))
+    up, util, mu, mt, pw, tp, hc, hm, hmt, sr, sq, st, sp, kv, t50, t95 = ([] for _ in range(16))
     for target, snap, err in snaps:
         host = (snap or {}).get("hostname") or target
         up.append((_lbl(target=target, host=host), 0 if snap is None else 1))
@@ -1412,6 +1480,8 @@ def prometheus(snaps):
             L = _lbl(target=target, host=host, service=sv.get("name"), kind=sv.get("kind"), port=sv.get("port"),
                      model=(sv.get("models") or [""])[0])
             sr.append((L, sv.get("running"))); sq.append((L, sv.get("queued"))); st.append((L, sv.get("tps")))
+            sp.append((L, sv.get("prefill_tps"))); kv.append((L, sv.get("kv_cache")))
+            t50.append((L, sv.get("ttft_p50"))); t95.append((L, sv.get("ttft_p95")))
     g("up", "1 if the machine is reporting", up)
     g("gpu_utilization_percent", "GPU utilization", util)
     g("gpu_memory_used_bytes", "GPU memory used (Apple: GPU-allocated)", mu)
@@ -1424,6 +1494,10 @@ def prometheus(snaps):
     g("service_requests_running", "Requests running in a detected model server", sr)
     g("service_requests_queued", "Requests waiting in a detected model server", sq)
     g("service_tokens_per_second", "Generation tokens per second", st)
+    g("service_prefill_tokens_per_second", "Prompt (prefill) tokens per second", sp)
+    g("service_kv_cache_usage_ratio", "KV cache usage (0-1)", kv)
+    g("service_ttft_p50_seconds", "Time to first token, median over the last minute", t50)
+    g("service_ttft_p95_seconds", "Time to first token, 95th percentile over the last minute", t95)
     return ("\n".join(lines) + "\n").encode()
 
 

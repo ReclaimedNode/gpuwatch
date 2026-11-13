@@ -33,7 +33,7 @@
   .host{margin:10px 12px;border:1px solid #2a3139;border-left:4px solid var(--green);border-radius:8px;background:#0d1013;overflow:hidden}
   .host.off{border-left-color:var(--red)} .host.wait{border-left-color:var(--yellow)}
   .hh{display:grid;align-items:center;gap:6px 18px;padding:10px 14px;background:#141a21;cursor:pointer;user-select:none;
-      grid-template-columns:30px minmax(150px,1.1fr) minmax(140px,1fr) minmax(170px,1.3fr) minmax(220px,1.7fr) 120px 170px minmax(90px,.8fr) 22px}
+      grid-template-columns:30px minmax(150px,1.1fr) minmax(140px,1fr) minmax(170px,1.3fr) minmax(220px,1.7fr) 120px 170px minmax(90px,.8fr) 54px}
   .hh:hover{background:#18202a}
   .hh .tg{color:var(--dim);font-size:12px}
   .hh .drag{color:#56606b;cursor:grab;padding:0 4px 0 0;font-size:14px}
@@ -75,7 +75,10 @@
   .kv{font-size:12px;line-height:1.5;white-space:nowrap}
   .kv .k{color:var(--dim);display:inline-block;width:4.5ch}
   .hh .st{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .hh .rm{cursor:pointer;color:var(--dim);text-align:center;border-radius:4px}
+  .hh .acts{display:flex;gap:4px;justify-content:flex-end;align-items:center}
+  .hh .op{cursor:pointer;color:var(--cyan);font-size:16px;line-height:1;padding:3px 5px;border-radius:5px;border:1px solid #2b3a44}
+  .hh .op:hover{background:#17303a}
+  .hh .rm{cursor:pointer;color:var(--dim);text-align:center;border-radius:4px;padding:0 3px}
   .hh .rm:hover{color:var(--red);background:#2a1414}
   .hh .rm.arm{color:var(--red);font-size:11px;white-space:nowrap}
   .host.collapsed .body{display:none}
@@ -86,9 +89,9 @@
   .host.nodata .hh .mt,.host.nodata .hh .kv,.host.nodata .hh .badge-c{display:none}
   .host.nogpu .hh .mt,.host.nogpu .hh .pw{visibility:hidden}
   @media (max-width:1250px){
-    .hh{grid-template-columns:30px 1fr 1fr 22px}
+    .hh{grid-template-columns:30px 1fr 1fr 54px}
     .hh .badge-c{grid-column:2 / span 2} .hh .mt,.hh .kv,.hh .st,.hh .err{grid-column:2 / span 2}
-    .hh .rm{grid-row:1;grid-column:4}
+    .hh .acts{grid-row:1;grid-column:4}
   }
   .devs{display:grid;grid-template-columns:repeat(auto-fill,minmax(600px,1fr));gap:10px 28px}
   .dev{white-space:pre;overflow:visible}
@@ -106,6 +109,74 @@
   .procs tr:nth-child(2) td{background:#108a9c;color:#fff}
   .procs td.t{color:var(--mag)}
   .empty{padding:40px 14px;color:var(--dim);white-space:pre-wrap}
+
+  /* ---------- floating detail windows ---------- */
+  #wins{position:fixed;inset:0;pointer-events:none;z-index:50}
+  .win{position:absolute;pointer-events:auto;width:1080px;height:760px;min-width:420px;min-height:300px;max-width:98vw;max-height:96vh;
+       display:flex;flex-direction:column;border-radius:22px;overflow:hidden;resize:both;
+       background:rgba(232,235,244,.94);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+       box-shadow:0 30px 80px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.35);
+       color:#1d2230;font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif}
+  .win.off{filter:grayscale(.6)}
+  .wbar{display:flex;align-items:center;gap:10px;padding:10px 14px 10px 18px;cursor:grab;user-select:none;touch-action:none;
+        background:rgba(255,255,255,.55);border-bottom:1px solid rgba(20,30,60,.08)}
+  .wbar:active{cursor:grabbing}
+  .wbar .wt{font-weight:700;font-size:15px}
+  .wbar .wsub{color:#6b7385;font-size:12px}
+  .wbar .wst{margin-left:auto;font-size:12px;color:#6b7385}
+  .wbar .wst .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#3fbf6a;margin-right:6px}
+  .win.off .wbar .wst .dot{background:#e5534b}
+  .wbar .wx{border:0;background:rgba(20,30,60,.06);color:#30384a;width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:14px}
+  .wbar .wx:hover{background:#e5534b;color:#fff}
+  .wtag{font-size:11px;font-weight:700;letter-spacing:.04em;padding:2px 8px;border-radius:8px;background:#e3e5fb;color:#5a62d6}
+  .wtag.ap{background:#efe6fb;color:#8a55d6}
+  .wbody{flex:1;overflow:auto;padding:16px}
+  .wgrid{display:grid;grid-template-columns:minmax(300px,380px) 1fr;gap:14px;align-items:start}
+  .wcol{display:flex;flex-direction:column;gap:14px}
+  .wc{background:rgba(255,255,255,.92);border-radius:18px;padding:16px 18px;box-shadow:0 1px 2px rgba(20,30,60,.06)}
+  .wc .lab{font-size:11px;font-weight:600;letter-spacing:.09em;color:#6b7385;text-transform:uppercase}
+  .hero .big{font-size:52px;font-weight:800;line-height:1;margin:14px 0 2px;letter-spacing:-.02em}
+  .hero .big small{font-size:16px;font-weight:500;color:#6b7385;margin-left:6px;letter-spacing:0}
+  .hero canvas{width:100%;height:46px;display:block;margin:8px 0}
+  .kv3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .kv3 div span{display:block;font-size:10px;font-weight:600;letter-spacing:.09em;color:#6b7385}
+  .kv3 div b{font-size:13px;color:#5a62d6;font-weight:600}
+  .wrow2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .stat b{font-size:22px;font-weight:700} .stat small{color:#6b7385;margin-left:4px}
+  .pbar{height:6px;border-radius:4px;background:#e7e9f1;overflow:hidden;margin-top:8px}
+  .pbar i{display:block;height:100%;border-radius:4px;background:#7c83e8}
+  .pbar.g i{background:#5ec8b6}
+  .pbar.w i{background:#e8a33d} .pbar.r i{background:#e5534b}
+  .prow{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;color:#6b7385}
+  .svl{display:grid;grid-template-columns:1fr auto;gap:5px 10px;font-size:13px;margin-top:8px}
+  .svl .h{grid-column:1 / -1;display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid #eceef4;color:#6b7385}
+  .svl .h:first-child{border-top:0;margin-top:0;padding-top:0}
+  .svl .h b{color:#1d2230}
+  .svl .v{text-align:right;font-variant-numeric:tabular-nums}
+  .gpanel{background:rgba(214,218,232,.55);border-radius:20px;padding:12px}
+  .gpanel .lab{margin:2px 4px 10px}
+  .gtiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px}
+  .gt{background:#fff;border-radius:16px;padding:12px 14px;display:grid;grid-template-columns:auto 1fr;gap:6px 14px;align-items:center}
+  .gt .gh{grid-column:1 / -1;display:flex;align-items:center;gap:8px;font-weight:700}
+  .gt .gh .nm{font-weight:500;color:#6b7385;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .gt .gh .tmp{margin-left:auto;font-weight:500;color:#6b7385;font-size:12px}
+  .ring{width:88px;height:88px}
+  .ring text{font:600 15px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#1d2230}
+  .gt .meters{display:flex;flex-direction:column;gap:6px}
+  .gt .mv{font-size:15px;font-weight:600;color:#1d2230}
+  .gtot{margin-top:12px;padding:0 4px}
+  .gtot .prow{margin-top:8px}
+  .whist{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
+  .whist .chart{flex:1 1 240px;min-width:220px;height:150px;background:#fff;border-radius:14px;padding:6px}
+  details.wproc{margin-top:14px;background:#fff;border-radius:14px;padding:8px 12px}
+  details.wproc summary{cursor:pointer;color:#6b7385;font-weight:600;font-size:12px;letter-spacing:.05em}
+  details.wproc table{width:100%;border-collapse:collapse;margin-top:6px;font:12px ui-monospace,SFMono-Regular,Menlo,monospace;table-layout:fixed}
+  details.wproc th{text-align:left;color:#6b7385;font-weight:600;padding:3px 6px;border-bottom:1px solid #eceef4}
+  details.wproc td{padding:3px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  @media (max-width:900px){
+    .win{left:0 !important;top:0 !important;width:100vw !important;height:100vh !important;max-width:100vw;max-height:100vh;border-radius:0;resize:none}
+    .wgrid{grid-template-columns:1fr}
+  }
   .keyp{padding:10px 14px;border-bottom:1px solid var(--line);background:#0f1215}
   .keyp pre{white-space:pre-wrap;word-break:break-all;background:#05070a;border:1px solid #2c333b;padding:6px 8px;margin:4px 0 8px}
   .keyp .row{display:flex;gap:8px;align-items:center;margin-bottom:8px}
@@ -166,6 +237,7 @@
 </div>
 <div id="totals" class="totals"></div>
 <div id="hosts"></div>
+<div id="wins"></div>
 
 <script>
 (() => {
@@ -236,7 +308,8 @@
       models: (Array.isArray(s.models) ? s.models : []).slice(0, 50).map(x => strOr(x, 200)),
       loaded: (Array.isArray(s.loaded) ? s.loaded : []).slice(0, 50).map(x => strOr(x, 200)),
       running: numOr(s.running), queued: numOr(s.queued), tps: numOr(s.tps),
-      busy: !!s.busy, auth: !!s.auth, pinned: !!s.pinned, cameras: intOr(s.cameras, null), fps: numOr(s.fps)}));
+      busy: !!s.busy, auth: !!s.auth, pinned: !!s.pinned, cameras: intOr(s.cameras, null), fps: numOr(s.fps),
+      prefill_tps: numOr(s.prefill_tps), kv_cache: numOr(s.kv_cache), ttft_p50: numOr(s.ttft_p50), ttft_p95: numOr(s.ttft_p95)}));
     return o;
   }
   // all writes carry X-Gpuwatch (forces a same-origin request); a lost session sends you to the login page
@@ -305,6 +378,7 @@
   async function removeHost(h){
     S.hosts = S.hosts.filter(x => x !== h);
     delete S.data[h]; delete S.hist[h];
+    closeWin(h);
     await saveHosts(); build();
   }
 
@@ -337,13 +411,14 @@
             <div class="kv sy"></div>
             <div class="err"></div>
             <div class="st d">connecting…</div>
-            <span class="rm" title="remove this machine">✕</span>
+            <span class="acts"><span class="op" title="open in a window">⧉</span><span class="rm" title="remove this machine">✕</span></span>
             <div class="svcs"></div>
           </div>
           <div class="body"><div class="devs"></div><div class="note"></div><div class="charts"></div>
             <table class="procs"><colgroup><col style="width:9ch"><col style="width:12ch"><col style="width:5ch"><col style="width:9ch"><col style="width:17ch"><col style="width:8ch"><col style="width:11ch"><col></colgroup><tbody></tbody></table></div>`;
         sec.querySelector('.hh').onclick = () => setExpanded(h, !S.expanded[h]);
         wireDrag(sec, h);
+        sec.querySelector('.op').onclick = ev => { ev.stopPropagation(); openWin(h); };
         sec.querySelector('.rm').onclick = ev => { ev.stopPropagation(); if (confirmRemove(h)) removeHost(h); };
         const q = sel => sec.querySelector(sel);
         e = { sec, hh: q('.hh'), hn: q('.hn'), addr: q('.addr'), st: q('.st'), badge: q('.badge-c'),
@@ -668,7 +743,8 @@
                      `<span class="k">RAM</span>${ho.mem_total ? gi1(ho.mem_used) + ' / ' + gi1(ho.mem_total) : 'N/A'}`;
   }
 
-  function drawChart(cv, label, pts){
+  function drawChart(cv, label, pts, light){
+    const C = light ? {txt:'#5b6472', box:'#c9cfdb', u:'#7c83e8', m:'#4fbfae'} : {txt:'#e4e4e4', box:'#cfcfcf', u:'#3cc8e6', m:'#e6d24a'};
     const dpr = window.devicePixelRatio || 1;
     const w = cv.clientWidth, h = cv.clientHeight;
     if (!w || !h) return;
@@ -682,9 +758,9 @@
     const L = 30, R = 12, T = 6, B = 18;
     const pw = w - L - R, ph = h - T - B;
     // axes
-    x.fillStyle = '#e4e4e4'; x.textAlign = 'right'; x.textBaseline = 'middle';
+    x.fillStyle = C.txt; x.textAlign = 'right'; x.textBaseline = 'middle';
     for (const v of [100, 75, 50, 25, 0]) x.fillText(String(v), L - 5, T + ph * (1 - v / 100));
-    x.strokeStyle = '#cfcfcf'; x.lineWidth = 1;
+    x.strokeStyle = C.box; x.lineWidth = 1;
     x.strokeRect(L + .5, T + .5, pw - 1, ph - 1);
     x.textAlign = 'center'; x.textBaseline = 'top';
     for (let i = 0; i <= 4; i++) {
@@ -694,8 +770,8 @@
     }
     // legend
     x.textAlign = 'left'; x.textBaseline = 'top';
-    x.fillStyle = '#3cc8e6'; x.fillText(label + ' %', L + 6, T + 4);
-    x.fillStyle = '#e6d24a'; x.fillText(label + ' mem%', L + 6, T + 19);
+    x.fillStyle = C.u; x.fillText(label + ' %', L + 6, T + 4);
+    x.fillStyle = C.m; x.fillText(label + ' mem%', L + 6, T + 19);
     // series
     const now = Date.now();
     const line = (idx, color) => {
@@ -712,8 +788,8 @@
       x.stroke();
     };
     x.save(); x.beginPath(); x.rect(L + 1, T + 1, pw - 2, ph - 2); x.clip();
-    line(2, '#e6d24a');
-    line(1, '#3cc8e6');
+    line(2, C.m);
+    line(1, C.u);
     x.restore();
   }
 
@@ -773,6 +849,7 @@
       S.inflight[h] = false;
       render(h);
       renderTotals();
+      renderWin(h);
     }
   }
   function pollAll(){ for (const h of S.hosts) poll(h); }
@@ -780,6 +857,176 @@
     clearInterval(S.timer);
     S.timer = setInterval(pollAll, S.interval);
     pollAll();
+  }
+
+  // ---------- floating detail windows ----------
+  const W = {open: {}, z: 60, layout: {}};
+  const fmtGB = b => { if (b == null) return '—'; const g = b / 1073741824; return (g >= 100 ? Math.round(g) : g.toFixed(g >= 10 ? 1 : 2)) + ' GiB'; };
+  const fmtMs = sec => sec == null ? '–' : sec < 1 ? Math.round(sec * 1000) + ' ms' : sec.toFixed(2) + ' s';
+  const pct = (a, b) => (a != null && b) ? Math.max(0, Math.min(100, 100 * a / b)) : 0;
+  function ring(v){
+    const r = 36, c = 2 * Math.PI * r, arc = 0.8 * c, f = Math.max(0, Math.min(100, v || 0)) / 100;
+    return `<svg class="ring" viewBox="0 0 88 88"><g transform="rotate(126 44 44)">` +
+      `<circle cx="44" cy="44" r="${r}" fill="none" stroke="#e7e9f1" stroke-width="7" stroke-linecap="round" stroke-dasharray="${arc} ${c}"/>` +
+      `<circle cx="44" cy="44" r="${r}" fill="none" stroke="#7c83e8" stroke-width="7" stroke-linecap="round" stroke-dasharray="${arc * f} ${c}"/></g>` +
+      `<text x="44" y="49" text-anchor="middle">${v == null ? 'N/A' : Math.round(v) + '%'}</text></svg>`;
+  }
+  const bar = (p, cls) => `<div class="pbar ${cls || ''}"><i style="width:${p.toFixed(1)}%"></i></div>`;
+  function saveLayout(){ store.set('winLayout', W.layout); store.set('winOpen', Object.keys(W.open)); }
+  function openWin(h){
+    if (W.open[h]) { W.open[h].el.style.zIndex = ++W.z; return; }
+    const n = Object.keys(W.open).length;
+    const L = W.layout[h] || {x: 60 + 34 * (n % 8), y: 70 + 30 * (n % 8)};
+    const el = document.createElement('div');
+    el.className = 'win';
+    el.style.left = Math.max(0, Math.min(L.x, innerWidth - 200)) + 'px';
+    el.style.top = Math.max(0, Math.min(L.y, innerHeight - 80)) + 'px';
+    if (L.w) el.style.width = L.w + 'px';
+    if (L.h) el.style.height = L.h + 'px';
+    el.style.zIndex = ++W.z;
+    el.innerHTML = `<div class="wbar"><span class="wt"></span><span class="wsub"></span><span class="wtag"></span><span class="wst"></span><button class="wx" title="close (Esc)">✕</button></div><div class="wbody"></div>`;
+    document.getElementById('wins').appendChild(el);
+    W.open[h] = {el, canv: {}, spark: null};
+    el.addEventListener('pointerdown', () => { el.style.zIndex = ++W.z; });
+    el.querySelector('.wx').onclick = () => closeWin(h);
+    const bar_ = el.querySelector('.wbar');
+    bar_.addEventListener('pointerdown', ev => {
+      if (ev.target.closest('.wx')) return;
+      const sx = ev.clientX, sy = ev.clientY, ox = el.offsetLeft, oy = el.offsetTop;
+      bar_.setPointerCapture(ev.pointerId);
+      const move = e => {
+        el.style.left = Math.max(-el.offsetWidth + 120, Math.min(innerWidth - 120, ox + e.clientX - sx)) + 'px';
+        el.style.top = Math.max(0, Math.min(innerHeight - 40, oy + e.clientY - sy)) + 'px';
+      };
+      const up = () => {
+        bar_.removeEventListener('pointermove', move); bar_.removeEventListener('pointerup', up);
+        W.layout[h] = Object.assign(W.layout[h] || {}, {x: el.offsetLeft, y: el.offsetTop}); saveLayout();
+      };
+      bar_.addEventListener('pointermove', move); bar_.addEventListener('pointerup', up);
+    });
+    // remember a resized window
+    el.addEventListener('pointerup', () => {
+      const w = el.offsetWidth, hh = el.offsetHeight, cur = W.layout[h] || {};
+      if (cur.w !== w || cur.h !== hh) { W.layout[h] = Object.assign(cur, {x: el.offsetLeft, y: el.offsetTop, w, h: hh}); saveLayout(); }
+    });
+    saveLayout();
+    renderWin(h);
+  }
+  function closeWin(h){
+    const w = W.open[h]; if (!w) return;
+    w.el.remove(); delete W.open[h]; saveLayout();
+  }
+  document.addEventListener('keydown', ev => {
+    if (ev.key !== 'Escape') return;
+    const top = Object.entries(W.open).sort((a, b) => (+b[1].el.style.zIndex) - (+a[1].el.style.zIndex))[0];
+    if (top) closeWin(top[0]);
+  });
+
+  function renderWin(h){
+    const w = W.open[h]; if (!w) return;
+    const d = S.data[h] || {}, j = d.j;
+    const el = w.el;
+    el.classList.toggle('off', !d.ok);
+    el.querySelector('.wt').textContent = (j && j.hostname) || h;
+    el.querySelector('.wsub').textContent = h;
+    el.querySelector('.wst').innerHTML = d.ok ? `<span class="dot"></span>live · ${new Date(d.lastOk).toLocaleTimeString()}` : `<span class="dot"></span>${esc(d.err || 'offline')}`;
+    if (!j) { el.querySelector('.wbody').innerHTML = `<div class="wc">${esc(d.err || 'connecting…')}</div>`; return; }
+    const gpus = j.gpus || [], svcs = j.services || [], apple = j.kind === 'apple';
+    const tag = el.querySelector('.wtag');
+    tag.className = 'wtag' + (apple ? ' ap' : '');
+    tag.textContent = gpus.length ? (apple ? gpus[0].name.replace(/^Apple /, '') : (gpus.length > 1 ? gpus.length + '× ' : '') + [...new Set(gpus.map(g => g.name.replace(/^NVIDIA /, '')))].join(' + ')) : 'no GPU';
+
+    // throughput history for the sparkline
+    const llm = svcs.filter(s => ['vllm', 'llamacpp', 'ollama', 'openai'].includes(s.kind));
+    const tps = llm.reduce((a, s) => a + (s.tps || 0), 0), pre = llm.reduce((a, s) => a + (s.prefill_tps || 0), 0);
+    const p50 = llm.map(s => s.ttft_p50).filter(v => v != null), p95 = llm.map(s => s.ttft_p95).filter(v => v != null);
+    const reported = llm.some(s => s.tps != null);
+    W.spark = W.spark || {}; const sp = W.spark[h] || (W.spark[h] = []);
+    if (!sp.length || Date.now() - sp[sp.length - 1][0] > 900) { sp.push([Date.now(), tps]); while (sp.length > 120) sp.shift(); }
+
+    const ho = j.host || {};
+    const used = gpus.reduce((a, g) => a + (g.mem_used || 0), 0), tot = gpus.reduce((a, g) => a + (g.mem_total || 0), 0);
+    const pw = gpus.reduce((a, g) => a + (g.power || 0), 0), pl = gpus.reduce((a, g) => a + (g.power_limit || 0), 0);
+
+    const svcRows = svcs.map(s => {
+      const models = (s.loaded && s.loaded.length ? s.loaded : s.models || []).map(shortModel);
+      const rows = [`<div class="h"><span>${esc(s.name || s.kind)}${s.port ? ' · :' + esc(s.port) : ''}</span><b>${esc(models[0] || (s.version ? 'v' + s.version : ''))}${models.length > 1 ? ' +' + (models.length - 1) : ''}</b></div>`];
+      const add = (k, v) => rows.push(`<span>${k}</span><span class="v">${v}</span>`);
+      if (s.prefill_tps != null) add('Prefill', s.prefill_tps.toFixed(1) + ' tok/s');
+      if (s.tps != null) add('Decode', s.tps.toFixed(1) + ' tok/s');
+      if (s.ttft_p50 != null || s.ttft_p95 != null) add('TTFT p50 / p95', fmtMs(s.ttft_p50) + ' / ' + fmtMs(s.ttft_p95));
+      if (s.running != null || s.queued != null) add(s.kind === 'invokeai' || s.kind === 'comfyui' ? 'Generating / queued' : 'Running / waiting', (s.running == null ? '–' : Math.round(s.running)) + ' / ' + (s.queued == null ? 0 : Math.round(s.queued)));
+      if (s.kv_cache != null) add('KV cache', Math.round(s.kv_cache * 100) + '%');
+      if (s.cameras != null) add('Cameras · fps', esc(s.cameras) + ' · ' + (s.fps == null ? '–' : esc(s.fps)));
+      if (s.auth) add('Status', 'API key needed');
+      return rows.join('');
+    }).join('') || `<div class="h"><span>No services detected</span><b></b></div>`;
+
+    const tiles = gpus.map(g => {
+      const mp = pct(g.mem_used, g.mem_total), pp = pct(g.power, g.power_limit);
+      const temp = g.temp != null ? Math.round(g.temp) + '°' : (g.thermal ? esc(g.thermal) : '');
+      return `<div class="gt"><div class="gh">⬢ GPU ${esc(g.index)} <span class="nm">${esc(g.name)}</span><span class="tmp">${temp}</span></div>
+        ${ring(g.util)}
+        <div class="meters">
+          <div class="prow"><span>${apple ? 'GPU MEM (wired)' : 'VRAM'}</span><span>${Math.round(mp)}%</span></div>
+          <div class="mv">${fmtGB(g.mem_used)} / ${fmtGB(g.mem_total)}</div>${bar(mp)}
+          <div class="prow"><span>POWER</span><span>${g.power_limit ? Math.round(pp) + '%' : ''}</span></div>
+          <div class="mv">${g.power == null ? 'N/A' : Math.round(g.power) + (g.power_limit ? ' / ' + Math.round(g.power_limit) : '') + ' W'}</div>${bar(g.power_limit ? pp : 0, 'g')}
+        </div></div>`;
+    }).join('');
+
+    const body = el.querySelector('.wbody');
+    const scroll = body.scrollTop;
+    const openProc = body.querySelector('details.wproc') && body.querySelector('details.wproc').open;
+    body.innerHTML = `
+      <div class="wgrid">
+        <div class="wcol">
+          <div class="wc hero"><span class="lab">Node throughput</span>
+            <div class="big">${reported ? tps.toFixed(1) : '—'}<small>${reported ? 'tok/s' : (llm.length ? 'not reported by these servers' : 'no model server found')}</small></div>
+            <canvas class="spark"></canvas>
+            <div class="kv3"><div><span>PREFILL</span><b>${llm.some(s => s.prefill_tps != null) ? pre.toFixed(1) + ' tok/s' : '–'}</b></div><div><span>DECODE</span><b>${reported ? tps.toFixed(1) + ' tok/s' : '–'}</b></div><div><span>TTFT p50</span><b>${p50.length ? fmtMs(Math.min(...p50)) : '–'}</b></div></div>
+          </div>
+          <div class="wrow2">
+            <div class="wc stat"><span class="lab">CPU</span><div><b>${ho.cpu == null ? 'N/A' : Math.round(ho.cpu) + '%'}</b></div>${bar(ho.cpu || 0)}</div>
+            <div class="wc stat"><span class="lab">RAM</span><div><b>${ho.mem_used == null ? 'N/A' : (ho.mem_used / 1073741824).toFixed(1)}</b><small>/ ${ho.mem_total ? (ho.mem_total / 1073741824).toFixed(1) : '?'} GiB</small></div>${bar(pct(ho.mem_used, ho.mem_total))}</div>
+          </div>
+          <div class="wc"><span class="lab">Serving</span><div class="svl">${svcRows}</div></div>
+        </div>
+        <div class="gpanel"><div class="lab">GPU${gpus.length > 1 ? 's' : ''}</div>
+          <div class="gtiles">${tiles || '<div class="wc">No supported GPU on this machine.</div>'}</div>
+          ${gpus.length ? `<div class="gtot">
+            <div class="prow"><span>${apple ? 'GPU MEMORY' : 'GPU VRAM'}</span><span>${fmtGB(used)} / ${fmtGB(tot)}</span></div>${bar(pct(used, tot))}
+            <div class="prow"><span>POWER</span><span>${pw ? Math.round(pw) + (pl ? ' / ' + Math.round(pl) : '') + ' W' : 'N/A'}</span></div>${bar(pl ? pct(pw, pl) : 0, 'g')}
+          </div>` : ''}
+        </div>
+      </div>
+      <div class="whist"></div>
+      <details class="wproc"${openProc ? ' open' : ''}><summary>PROCESSES (${(j.procs || []).length})</summary>
+        <table><colgroup><col style="width:9ch"><col style="width:11ch"><col style="width:5ch"><col style="width:13ch"><col style="width:7ch"><col></colgroup>
+        <tr><th>PID</th><th>USER</th><th>DEV</th><th>${apple ? 'MEM' : 'GPU MEM'}</th><th>CPU</th><th>COMMAND</th></tr>
+        ${(j.procs || []).map(p => `<tr><td>${esc(p.pid)}</td><td>${esc(p.user)}</td><td>${p.dev == null ? '-' : esc(p.dev)}</td><td>${fmtGB(p.gpu_mem != null ? p.gpu_mem : p.host_mem)}</td><td>${p.cpu == null ? '–' : Math.round(p.cpu) + '%'}</td><td title="${esc(p.command)}">${esc(p.command)}</td></tr>`).join('')}
+        </table></details>`;
+    body.scrollTop = scroll;
+    // history charts (light) + sparkline
+    const hb = body.querySelector('.whist');
+    const cvs = gpus.map(g => {   // lay out every chart first, then draw, so each measures its final width
+      const div = document.createElement('div'); div.className = 'chart';
+      const cv = document.createElement('canvas'); cv.style.width = '100%'; cv.style.height = '100%'; div.appendChild(cv); hb.appendChild(div);
+      return [cv, g];
+    });
+    for (const [cv, g] of cvs) drawChart(cv, 'GPU' + g.index, (S.hist[h] || {})[String(g.index)] || [], true);
+    drawSpark(body.querySelector('canvas.spark'), sp);
+  }
+  function drawSpark(cv, pts){
+    if (!cv) return;
+    const dpr = devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+    if (!w || !h) return;
+    cv.width = w * dpr; cv.height = h * dpr;
+    const x = cv.getContext('2d'); x.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const max = Math.max(1, ...pts.map(p => p[1]));
+    x.strokeStyle = '#7c83e8'; x.lineWidth = 2; x.beginPath();
+    pts.forEach((p, i) => { const px = pts.length < 2 ? w : (i / (pts.length - 1)) * w, py = h - 3 - (p[1] / max) * (h - 8); i ? x.lineTo(px, py) : x.moveTo(px, py); });
+    x.stroke();
   }
 
   // ---------- init ----------
@@ -797,6 +1044,8 @@
     await loadHosts();
     build();
     restart();
+    W.layout = store.get('winLayout', {}) || {};
+    for (const h of store.get('winOpen', []) || []) if (S.hosts.includes(h)) openWin(h);
 
     const inp = document.getElementById('addHost');
     document.getElementById('addBtn').onclick = () => { addHost(inp.value); inp.value = ''; };
