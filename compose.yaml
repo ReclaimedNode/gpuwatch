@@ -1,0 +1,26 @@
+# gpuwatch hub. Copy .env.example to .env and edit it, then: docker compose up -d
+services:
+  gpuwatch:
+    image: ghcr.io/reclaimednode/gpuwatch:latest
+    # build: .                       # or build it yourself from this repo
+    container_name: gpuwatch
+    restart: unless-stopped
+    ports:
+      - "9180:9180"
+    environment:
+      GPUWATCH_SSH_USER: ${GPUWATCH_SSH_USER:-gpuwatch}   # SSH user for machines added without user@
+      GPUWATCH_HUB_IP: ${GPUWATCH_HUB_IP:-}              # this host's LAN IP, used in the authorized_keys "from=" lock
+      GPUWATCH_PASSWORD: ${GPUWATCH_PASSWORD:-}          # login passphrase (empty: one is generated and printed in the log)
+      GPUWATCH_API_TOKEN: ${GPUWATCH_API_TOKEN:-}        # optional; otherwise generated (shown under Manage machines)
+      GPUWATCH_DEMO_FLEET: ${GPUWATCH_DEMO_FLEET:-}      # set to 1 to try it with fake machines
+    volumes:
+      - ./data:/data        # SSH key, known_hosts, host list, password hash - keep it private and backed up
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]   # only for handing /data to "nobody" at start
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    pids_limit: 256

@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>gpuwatch</title>
+<style>
+  :root{
+    --bg:#0a0c0e; --fg:#e4e4e4; --dim:#77808a; --line:#23282e;
+    --cyan:#3cc8e6; --mag:#e05ad6; --green:#3fdc5d; --yellow:#e6d24a; --red:#ff5f56;
+    --hdr:#1d9a2c; --box:#cfcfcf;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--fg)}
+  body{font:13px/1.38 ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+  .c{color:var(--cyan)} .m{color:var(--mag)} .g{color:var(--green)} .y{color:var(--yellow)}
+  .r{color:var(--red)} .d{color:var(--dim)}
+
+  /* toolbar */
+  .bar{position:sticky;top:0;z-index:5;display:flex;flex-wrap:wrap;gap:10px;align-items:center;
+       padding:8px 14px;background:#0f1215;border-bottom:1px solid var(--line)}
+  .bar .title{font-weight:bold;color:var(--green);margin-right:6px}
+  .bar input,.bar select,.bar button{font:inherit;color:var(--fg);background:#161a1f;border:1px solid #2c333b;
+       border-radius:3px;padding:3px 7px}
+  .bar input[type=text]{width:260px}
+  .bar button{cursor:pointer} .bar button:hover{border-color:var(--cyan)}
+  .bar label{display:flex;align-items:center;gap:5px;color:var(--dim);cursor:pointer}
+  .bar .spacer{flex:1}
+  .bar .mode{color:var(--dim)}
+
+  /* host block */
+  #hosts{padding:6px 0 20px}
+  .host{margin:10px 12px;border:1px solid #2a3139;border-left:4px solid var(--green);border-radius:8px;background:#0d1013;overflow:hidden}
+  .host.off{border-left-color:var(--red)} .host.wait{border-left-color:var(--yellow)}
+  .hh{display:grid;align-items:center;gap:6px 18px;padding:10px 14px;background:#141a21;cursor:pointer;user-select:none;
+      grid-template-columns:30px minmax(150px,1.1fr) minmax(140px,1fr) minmax(170px,1.3fr) minmax(220px,1.7fr) 120px 170px minmax(90px,.8fr) 22px}
+  .hh:hover{background:#18202a}
+  .hh .tg{color:var(--dim);font-size:12px}
+  .hh .drag{color:#56606b;cursor:grab;padding:0 4px 0 0;font-size:14px}
+  .hh .drag:hover{color:var(--fg)}
+  .host.dragging{opacity:.4}
+  .host.drop-before{box-shadow:0 -3px 0 0 var(--cyan)} .host.drop-after{box-shadow:0 3px 0 0 var(--cyan)}
+  .hh .svcs{grid-column:2 / -1;display:flex;flex-wrap:wrap;gap:6px;margin-top:2px}
+  .hh .svcs:empty{display:none}
+  .chip{font-size:12px;padding:2px 9px;border-radius:5px;background:#1b222b;border:1px solid #2b343f;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+  .chip b{font-weight:bold;color:var(--cyan);margin-right:4px}
+  .chip i{font-style:normal;color:var(--dim)}
+  .chip .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#56606b;margin-right:6px;vertical-align:1px}
+  .chip.busy .dot{background:var(--green);box-shadow:0 0 6px var(--green)}
+  .chip.lock b{color:var(--yellow)}
+  .chip.proc b{color:var(--mag)}
+  .totals{display:flex;flex-wrap:wrap;gap:8px 28px;align-items:center;padding:10px 26px 4px;font-size:12px}
+  .totals .t{display:flex;flex-direction:column;gap:2px}
+  .totals .t span:first-child{color:var(--dim);font-size:11px;letter-spacing:.04em}
+  .totals .t span:last-child{font-size:15px;color:#fff}
+  .totals .tbar{width:300px} .totals .tbar b{white-space:nowrap;font-weight:normal;color:#fff}
+  .pins{margin-top:10px;border-top:1px solid var(--line);padding-top:10px}
+  .pins select,.pins input{font:inherit;color:var(--fg);background:#161a1f;border:1px solid #2c333b;border-radius:3px;padding:3px 7px}
+  .pins input{width:auto} .pins .pinurl{width:230px} .pins .pinname{width:130px} .pins .pinkey{width:160px}
+  .pins ul{margin:6px 0 0;padding-left:18px}
+  .pins li .x{cursor:pointer;color:var(--dim);margin-left:8px} .pins li .x:hover{color:var(--red)}
+  .hh .hn{font-weight:bold;font-size:15px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .hh .addr{color:var(--dim);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+  .badge.nv{background:#16301b;color:#7be08c;border:1px solid #275a31}
+  .badge.ap{background:#2b2238;color:#c9a7ff;border:1px solid #4a3a63}
+  .badge.no{background:#222;color:var(--dim);border:1px solid #333}
+  .mt .ml{font-size:11px;color:var(--dim);letter-spacing:.04em;display:flex;justify-content:space-between}
+  .mt .ml b{color:var(--fg);font-weight:normal}
+  .segs{display:flex;gap:3px;margin-top:3px}
+  .track{flex:1;height:10px;background:#232a33;border-radius:3px;overflow:hidden;position:relative}
+  .fill{height:100%;border-radius:3px;transition:width .4s ease}
+  .gpu .fill{background:var(--cyan)} .mem .fill{background:var(--green)}
+  .mem .fill.hi{background:#5bbf6a}
+  .kv{font-size:12px;line-height:1.5;white-space:nowrap}
+  .kv .k{color:var(--dim);display:inline-block;width:4.5ch}
+  .hh .st{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .hh .rm{cursor:pointer;color:var(--dim);text-align:center;border-radius:4px}
+  .hh .rm:hover{color:var(--red);background:#2a1414}
+  .hh .rm.arm{color:var(--red);font-size:11px;white-space:nowrap}
+  .host.collapsed .body{display:none}
+  .host.off .body{opacity:.45}
+  .body{padding:10px 14px 14px;border-top:1px solid #2a3139}
+  .hh .err{display:none;grid-column:3 / span 5;color:var(--red);font-size:12px;white-space:normal}
+  .host.nodata .hh .err{display:block}
+  .host.nodata .hh .mt,.host.nodata .hh .kv,.host.nodata .hh .badge-c{display:none}
+  .host.nogpu .hh .mt,.host.nogpu .hh .pw{visibility:hidden}
+  @media (max-width:1250px){
+    .hh{grid-template-columns:30px 1fr 1fr 22px}
+    .hh .badge-c{grid-column:2 / span 2} .hh .mt,.hh .kv,.hh .st,.hh .err{grid-column:2 / span 2}
+    .hh .rm{grid-row:1;grid-column:4}
+  }
+  .devs{display:grid;grid-template-columns:repeat(auto-fill,minmax(600px,1fr));gap:10px 28px}
+  .dev{white-space:pre;overflow:visible}
+  .note{color:var(--dim);margin-top:6px;white-space:pre-wrap}
+  .charts{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+  .chart{flex:1 1 230px;min-width:210px;height:180px}
+  .chart canvas{width:100%;height:100%;display:block}
+  body.compact .charts, body.compact .procs, body.compact .note{display:none}
+
+  /* processes */
+  table.procs{width:100%;border-collapse:collapse;table-layout:fixed;margin-top:10px}
+  .procs th{background:var(--hdr);color:#000;font-weight:normal;text-align:right;padding:0 6px;white-space:nowrap}
+  .procs td{text-align:right;padding:0 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .procs .cmd{text-align:left}
+  .procs tr:nth-child(2) td{background:#108a9c;color:#fff}
+  .procs td.t{color:var(--mag)}
+  .empty{padding:40px 14px;color:var(--dim);white-space:pre-wrap}
+  .keyp{padding:10px 14px;border-bottom:1px solid var(--line);background:#0f1215}
+  .keyp pre{white-space:pre-wrap;word-break:break-all;background:#05070a;border:1px solid #2c333b;padding:6px 8px;margin:4px 0 8px}
+  .keyp .row{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+  .keyp input{font:inherit;color:var(--fg);background:#161a1f;border:1px solid #2c333b;border-radius:3px;padding:3px 7px;width:340px}
+  .keyp .addrow{margin:2px 0 12px}
+  .hh .rm{visibility:hidden}
+  body.manage .hh .rm{visibility:visible}
+  #manageBtn.on{border-color:var(--cyan);color:var(--cyan)}
+  .keyp button{font:inherit;color:var(--fg);background:#161a1f;border:1px solid #2c333b;border-radius:3px;padding:3px 7px;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="bar">
+  <span class="title">gpuwatch</span>
+  <label>refresh
+    <select id="interval">
+      <option value="500">0.5s</option><option value="1000" selected>1s</option>
+      <option value="2000">2s</option><option value="5000">5s</option>
+    </select>
+  </label>
+  <label>graph
+    <select id="win"><option value="60">1 min</option><option value="300">5 min</option><option value="900">15 min</option></select>
+  </label>
+  <label><input type="checkbox" id="compact"> compact</label>
+  <button id="expAll">Expand all</button><button id="colAll">Collapse all</button>
+  <button id="manageBtn">Manage machines</button>
+  <button id="logoutBtn" hidden>Sign out</button>
+  <span class="spacer"></span>
+  <span class="mode" id="mode"></span>
+</div>
+<div id="keyPanel" class="keyp" hidden>
+  <div class="row addrow"><span class="c">Add machine</span>
+    <input id="addHost" type="text" placeholder="add host  e.g. 192.168.1.50 or host:9180" autocomplete="off">
+    <button id="addBtn">Add</button><span class="d">· remove a machine with its ✕ while this panel is open</span></div>
+  <div class="hubkey" hidden>
+  <div><span class="c">Hub public key</span> <span class="d">— authorize it on each machine for the SSH user the hub logs in as</span></div>
+  <pre id="pubkey"></pre>
+  <div class="d">Run on each machine, as the account the hub logs in as. The key only works from the hub's address, can't forward ports or open a terminal, and can only start the collector:</div>
+  <pre id="authCmd"></pre>
+  <div class="row"><button id="copyCmd">Copy command</button><button id="copyKey">Copy key</button><span id="copied" class="g"></span></div>
+  <div class="d">Macs: turn on System Settings → General → Sharing → Remote Login. Optional, for GPU clock/power on Macs (allows only this exact command):</div>
+  <pre id="sudoCmd"></pre>
+  <div><span class="c">API token</span> <span class="d">— for Prometheus (/metrics) and the Homepage widget (/api/summary), sent as "Authorization: Bearer &lt;token&gt;"</span></div>
+  <pre id="apiTok"></pre>
+  <div class="row"><button id="copyTok">Copy token</button></div>
+  </div>
+  <div class="pins" id="pinsBox" hidden>
+    <div><span class="c">Pinned services</span> <span class="d">— optional. Services are found automatically; pin one that's missed or needs an API key. URL is as seen from that machine.</span></div>
+    <div class="row" style="margin-top:6px">
+      <select id="pinHost"></select>
+      <input id="pinName" class="pinname" placeholder="name (e.g. oMLX)">
+      <input id="pinUrl" class="pinurl" placeholder="http://localhost:8000">
+      <input id="pinKey" class="pinkey" type="password" placeholder="API key (optional)" autocomplete="off">
+      <button id="pinAdd">Pin</button>
+    </div>
+    <ul id="pinList"></ul>
+  </div>
+</div>
+<div id="totals" class="totals"></div>
+<div id="hosts"></div>
+
+<script>
+(() => {
+  const DEFAULT_PORT = 9180, KEEP = 905;            // seconds of history kept in the browser
+  let WINDOW = 60;                                   // seconds shown in the graphs
+  const GiB = 1073741824, MiB = 1048576;
+  const S = {
+    hosts: [], served: false, mode: 'direct', pubkey: '', sshUser: '', interval: 1000,
+    data: {}, hist: {}, inflight: {}, expanded: {}, el: {}, timer: null
+  };
+
+  // ---------- storage (best effort) ----------
+  const store = {
+    get(k, d){ try { const v = localStorage.getItem('gpuwatch.' + k); return v == null ? d : JSON.parse(v); } catch(e){ return d; } },
+    set(k, v){ try { localStorage.setItem('gpuwatch.' + k, JSON.stringify(v)); } catch(e){} }
+  };
+
+  // ---------- helpers ----------
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  function normHost(h){
+    h = (h || '').trim().replace(/^(https?|ssh):\/\//, '').split('/')[0];
+    if (!h) return '';
+    if (S.mode === 'hub') return h;            // SSH target: [user@]host[:port]
+    if (h.startsWith('[')) return h.includes(']:') ? h : h + ':' + DEFAULT_PORT;
+    return (h.split(':').length === 2) ? h : h + ':' + DEFAULT_PORT;
+  }
+  const url = (h, ep) => S.served ? `/proxy/${encodeURIComponent(h)}/${ep}` : `http://${h}/${ep}`;
+  const gi = b => b == null ? 'N/A' : (b / GiB).toFixed(3) + 'Gi';
+  const gi1 = b => b == null ? 'N/A' : (b / GiB).toFixed(1) + 'Gi';
+  const pad = (s, n) => { s = String(s); return s.length >= n ? s : s + ' '.repeat(n - s.length); };
+  const lpad = (s, n) => { s = String(s); return s.length >= n ? s : ' '.repeat(n - s.length) + s; };
+  const val = (v, unit, w) => lpad(v == null ? 'N/A' : Math.round(v) + unit, w);
+  const id = h => 'h_' + h.replace(/[^\w]/g, '_');
+
+  // nvtop-style text bar: "||||||      label"
+  function tbar(frac, width, label, cls){
+    frac = Math.max(0, Math.min(1, frac || 0));
+    const avail = Math.max(0, width - label.length);
+    const n = Math.round(frac * avail);
+    const color = cls || (frac >= .95 ? 'r' : frac >= .8 ? 'y' : 'g');
+    return `<span class="${color}">${'|'.repeat(n)}</span>${' '.repeat(avail - n)}${esc(label)}`;
+  }
+
+  // ---------- data hygiene: everything from machines is untrusted ----------
+  const numOr = v => (typeof v === 'number' && isFinite(v)) ? v : null;
+  const strOr = (v, n) => v == null ? '' : String(v).slice(0, n || 200);
+  const intOr = (v, d) => Number.isInteger(v) ? v : d;
+  function clean(j){
+    j = (j && typeof j === 'object') ? j : {};
+    const h = j.host || {};
+    const o = {kind: strOr(j.kind, 20), hostname: strOr(j.hostname, 80), error: strOr(j.error, 300), power_metrics: !!j.power_metrics,
+               host: {cpu: numOr(h.cpu), mem_used: numOr(h.mem_used), mem_total: numOr(h.mem_total)}};
+    o.gpus = (Array.isArray(j.gpus) ? j.gpus : []).slice(0, 16).map((g, i) => {
+      g = g || {};
+      const r = {index: intOr(g.index, i), name: strOr(g.name, 80), bus: g.bus == null ? null : strOr(g.bus, 40),
+        util: numOr(g.util), mem_used: numOr(g.mem_used), mem_total: numOr(g.mem_total), mem_in_use: numOr(g.mem_in_use),
+        unified_total: numOr(g.unified_total), mem_total_is_default: !!g.mem_total_is_default,
+        temp: numOr(g.temp), power: numOr(g.power), power_limit: numOr(g.power_limit), fan: numOr(g.fan),
+        clock_gr: numOr(g.clock_gr), clock_mem: numOr(g.clock_mem), thermal: g.thermal == null ? null : strOr(g.thermal, 20)};
+      if ('pcie_rx' in g) { r.pcie_rx = numOr(g.pcie_rx); r.pcie_tx = numOr(g.pcie_tx); }
+      return r;
+    });
+    o.procs = (Array.isArray(j.procs) ? j.procs : []).slice(0, 64).map(p => (p = p || {}, {
+      pid: intOr(p.pid, 0), user: strOr(p.user, 32), dev: intOr(p.dev, null), type: strOr(p.type, 16),
+      gpu_mem: numOr(p.gpu_mem), cpu: numOr(p.cpu), host_mem: numOr(p.host_mem), command: strOr(p.command, 500)}));
+    o.services = (Array.isArray(j.services) ? j.services : []).slice(0, 32).map(s => (s = s || {}, {
+      kind: strOr(s.kind, 20), name: strOr(s.name, 40), port: intOr(s.port, null), version: strOr(s.version, 40),
+      models: (Array.isArray(s.models) ? s.models : []).slice(0, 50).map(x => strOr(x, 200)),
+      loaded: (Array.isArray(s.loaded) ? s.loaded : []).slice(0, 50).map(x => strOr(x, 200)),
+      running: numOr(s.running), queued: numOr(s.queued), tps: numOr(s.tps),
+      busy: !!s.busy, auth: !!s.auth, pinned: !!s.pinned, cameras: intOr(s.cameras, null), fps: numOr(s.fps)}));
+    return o;
+  }
+  // all writes carry X-Gpuwatch (forces a same-origin request); a lost session sends you to the login page
+  async function api(path, opts){
+    opts = opts || {};
+    opts.headers = Object.assign({'X-Gpuwatch': '1'}, opts.headers || {});
+    opts.credentials = 'same-origin';
+    const r = await fetch(path, opts);
+    if (r.status === 401 && S.served) { location.href = '/login'; throw new Error('signed out'); }
+    return r;
+  }
+
+  // ---------- host list ----------
+  async function loadHosts(){
+    const qp = new URLSearchParams(location.search).get('hosts');
+    if (location.protocol.startsWith('http')) {
+      try {
+        const r = await fetch('/config', {cache:'no-store', credentials:'same-origin'});
+        if (r.status === 401) { location.href = '/login'; return; }
+        if (r.ok) {
+          const j = await r.json();
+          if (Array.isArray(j.hosts)) {
+            S.served = true; S.mode = j.mode || 'agent'; S.pubkey = j.pubkey || ''; S.sshUser = j.ssh_user || '';
+            S.pins = j.pins || {}; S.apiToken = j.api_token || ''; S.hubIp = j.hub_ip || '';
+            S.hosts = j.hosts.map(normHost).filter(Boolean);
+          }
+        }
+      } catch(e) {}
+    }
+    if (!S.served) S.hosts = store.get('hosts', []);
+    if (qp) for (const h of qp.split(',').map(normHost).filter(Boolean)) if (!S.hosts.includes(h)) S.hosts.push(h);
+    document.getElementById('mode').textContent = S.mode === 'hub'
+      ? `hub · agentless over SSH (default user ${S.sshUser})`
+      : S.served ? 'host list saved on this agent · polling through it'
+                 : 'host list saved in this browser · polling agents directly';
+    if (S.mode === 'hub') {
+      document.getElementById('addHost').placeholder = `add machine  e.g. 192.168.1.50 or ${S.sshUser === 'root' ? 'gpuwatch' : 'root'}@192.168.1.51`;
+      document.querySelector('#keyPanel .hubkey').hidden = false;
+      document.getElementById('pubkey').textContent = S.pubkey;
+      const from = S.hubIp ? `from="${S.hubIp},172.16.0.0/12",` : '';
+      const line = `${from}restrict,command="python3 - --stream --interval 1" ${S.pubkey}`;
+      document.getElementById('authCmd').textContent =
+        `mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && sed -i.bak '/gpuwatch-hub$/d' ~/.ssh/authorized_keys && echo '${line}' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys`;
+      document.getElementById('sudoCmd').textContent =
+        `echo "$USER ALL=(root) NOPASSWD: /usr/bin/powermetrics --samplers gpu_power\\,thermal -i 1000 -n 1" | sudo tee /etc/sudoers.d/gpuwatch >/dev/null && sudo chmod 440 /etc/sudoers.d/gpuwatch && sudo visudo -cf /etc/sudoers.d/gpuwatch`;
+      document.getElementById('apiTok').textContent = S.apiToken;
+      document.getElementById('logoutBtn').hidden = false;
+    }
+  }
+  async function saveHosts(){
+    store.set('hosts', S.hosts);
+    if (S.served) {
+      try {
+        const r = await api('/config', {method:'POST', headers:{'Content-Type':'application/json'},
+                                        body: JSON.stringify({hosts: S.hosts})});
+        if (r.ok) { const j = await r.json(); S.hosts = j.hosts; if (j.pins) S.pins = j.pins; }
+      } catch(e) {}
+    }
+  }
+  async function addHost(raw){
+    const list = raw.split(/[\s,]+/).map(normHost).filter(Boolean);
+    let added = false;
+    for (const h of list) if (!S.hosts.includes(h)) { S.hosts.push(h); added = true; }
+    if (added) { await saveHosts(); build(); pollAll(); }
+  }
+  async function removeHost(h){
+    S.hosts = S.hosts.filter(x => x !== h);
+    delete S.data[h]; delete S.hist[h];
+    await saveHosts(); build();
+  }
+
+  // ---------- DOM ----------
+  function build(){
+    const root = document.getElementById('hosts');
+    if (!S.hosts.length) {
+      root.innerHTML = S.mode === 'hub'
+        ? `<div class="empty">No machines yet.\n\n1. Click "Manage machines" above and run the command it shows on each machine (as the SSH user).\n2. Add the machine above:  192.168.1.50   or   user@192.168.1.51\n   Several at once works too, separated by commas.</div>`
+        : `<div class="empty">No machines yet.\n\nInstall the agent on each box (see README), then add its IP above.\nSeveral at once works too:  192.168.1.50, 192.168.1.51, 192.168.1.52</div>`;
+      S.el = {};
+      return;
+    }
+    const keep = {};
+    const frag = document.createDocumentFragment();
+    for (const h of S.hosts) {
+      let e = S.el[h];
+      if (!e) {
+        const sec = document.createElement('section');
+        sec.className = 'host wait' + (S.expanded[h] ? '' : ' collapsed');
+        sec.id = id(h);
+        sec.innerHTML = `
+          <div class="hh" title="click to show / hide details">
+            <span><span class="drag" draggable="true" title="drag to reorder">⠿</span><span class="tg">${S.expanded[h] ? '▼' : '▶'}</span></span>
+            <div><div class="hn">${esc(h)}</div><div class="addr">${esc(h)}</div></div>
+            <div class="badge-c"><span class="badge no">…</span></div>
+            <div class="mt gpu"><div class="ml"><span>GPU</span><b class="gv">—</b></div><div class="segs"><div class="track"><div class="fill" style="width:0"></div></div></div></div>
+            <div class="mt mem"><div class="ml"><span class="mlab">GPU MEM</span><b class="mv">—</b></div><div class="segs"><div class="track"><div class="fill" style="width:0"></div></div></div><div class="ml"><span></span><span class="mf"></span></div></div>
+            <div class="kv pw"></div>
+            <div class="kv sy"></div>
+            <div class="err"></div>
+            <div class="st d">connecting…</div>
+            <span class="rm" title="remove this machine">✕</span>
+            <div class="svcs"></div>
+          </div>
+          <div class="body"><div class="devs"></div><div class="note"></div><div class="charts"></div>
+            <table class="procs"><colgroup><col style="width:9ch"><col style="width:12ch"><col style="width:5ch"><col style="width:9ch"><col style="width:17ch"><col style="width:8ch"><col style="width:11ch"><col></colgroup><tbody></tbody></table></div>`;
+        sec.querySelector('.hh').onclick = () => setExpanded(h, !S.expanded[h]);
+        wireDrag(sec, h);
+        sec.querySelector('.rm').onclick = ev => { ev.stopPropagation(); if (confirmRemove(h)) removeHost(h); };
+        const q = sel => sec.querySelector(sel);
+        e = { sec, hh: q('.hh'), hn: q('.hn'), addr: q('.addr'), st: q('.st'), badge: q('.badge-c'),
+              gv: q('.gpu .gv'), gsegs: q('.gpu .segs'), mv: q('.mem .mv'), mfill: q('.mem .fill'), mf: q('.mem .mf'),
+              mlab: q('.mem .mlab'), pw: q('.pw'), sy: q('.sy'), err: q('.hh .err'), svcs: q('.hh .svcs'),
+              devs: q('.devs'), note: q('.note'), charts: q('.charts'), tbody: q('tbody'), canv: {} };
+      }
+      keep[h] = e;
+      frag.appendChild(e.sec);
+    }
+    root.innerHTML = '';
+    root.appendChild(frag);
+    S.el = keep;
+    for (const h of S.hosts) render(h);
+  }
+  function setExpanded(h, on){
+    S.expanded[h] = on;
+    store.set('expanded', S.expanded);
+    const e = S.el[h]; if (!e) return;
+    e.sec.classList.toggle('collapsed', !on);
+    e.sec.querySelector('.tg').textContent = on ? '▼' : '▶';
+    if (on) render(h);
+  }
+  // removal asks via a second click within 3 s instead of a blocking dialog
+  const pendingRemove = {};
+  function confirmRemove(h){
+    const e = S.el[h];
+    if (pendingRemove[h] && Date.now() - pendingRemove[h] < 3000) return true;
+    pendingRemove[h] = Date.now();
+    const rm = e.sec.querySelector('.rm');
+    rm.textContent = 'remove?'; rm.classList.add('arm');
+    setTimeout(() => { rm.textContent = '✕'; rm.classList.remove('arm'); }, 3000);
+    return false;
+  }
+
+  // ---------- render ----------
+  function devLines(g, kind){
+    const bw = v => v == null ? 'N/A' : v >= 1000 ? (v / 1000).toFixed(2) + ' GB/s' : Math.round(v) + ' MB/s';
+    const L1 = `<span class="c">Device ${esc(g.index)}</span> [${esc(g.name)}]` + (g.bus ? ` <span class="m">${esc(g.bus)}</span>` : '') +
+               (('pcie_rx' in g) ? ` <span class="m">RX:</span> ${pad(bw(g.pcie_rx), 10)} <span class="m">TX:</span> ${bw(g.pcie_tx)}` : '');
+    const mhz = v => v == null ? 'N/A' : Math.round(v) + 'MHz';
+    let L2;
+    if (kind === 'apple') {
+      const therm = g.thermal ? esc(g.thermal) : 'N/A';
+      L2 = `<span class="c">GPU</span> ${pad(mhz(g.clock_gr), 8)} <span class="c">THERMAL</span> ${pad(therm, 9)} ` +
+           `<span class="c">POW</span> ${g.power == null ? 'N/A' : g.power.toFixed(1) + ' W'}   ` +
+           `<span class="c">UNIFIED</span> ${gi1(g.unified_total)}`;
+    } else {
+      const temp = g.temp == null ? 'N/A' : `<span class="${g.temp >= 85 ? 'r' : g.temp >= 75 ? 'y' : 'g'}">${Math.round(g.temp)}°C</span>`;
+      L2 = `<span class="c">GPU</span> ${pad(mhz(g.clock_gr), 8)} <span class="c">MEM</span> ${pad(mhz(g.clock_mem), 8)} ` +
+           `<span class="c">TEMP</span> ${temp}${' '.repeat(Math.max(1, 6 - (g.temp == null ? 3 : String(Math.round(g.temp)).length + 2)))}` +
+           `<span class="c">FAN</span> ${pad(g.fan == null ? 'N/A' : Math.round(g.fan) + '%', 5)} ` +
+           `<span class="c">POW</span> ${val(g.power, '', 3)} / ${g.power_limit == null ? 'N/A' : Math.round(g.power_limit)} W`;
+    }
+    const util = g.util == null ? null : g.util;
+    const memFrac = (g.mem_used != null && g.mem_total) ? g.mem_used / g.mem_total : 0;
+    const memLbl = `${gi(g.mem_used)}/${gi(g.mem_total)}`;
+    const L3 = `<span class="c">GPU</span>[${tbar((util || 0) / 100, 22, util == null ? 'N/A' : Math.round(util) + '%', 'g')}] ` +
+               `<span class="c">MEM</span>[${tbar(memFrac, 32, memLbl, 'g')}]`;
+    let out = [L1, L2, L3];
+    if (kind === 'apple') {
+      const lim = g.mem_total_is_default ? 'macOS default (~' + gi1(g.mem_total) + ')' : 'iogpu.wired_limit_mb = ' + Math.round(g.mem_total / MiB);
+      out.push(`<span class="d">MEM = GPU-allocated memory vs wired limit · ${esc(lim)}` + (g.mem_in_use != null ? ` · active now ${gi1(g.mem_in_use)}` : '') + `</span>`);
+    }
+    return out.join('\n');
+  }
+
+  function render(h){
+    const e = S.el[h]; if (!e) return;
+    const d = S.data[h];
+    if (!d) return;
+    const waiting = !d.ok && d.err === 'connecting';
+    e.sec.classList.toggle('off', !d.ok && !waiting);
+    e.sec.classList.toggle('wait', waiting);
+    const j = d.j;
+    e.st.innerHTML = d.ok
+      ? `<span class="g">●</span> online <span class="d">${Math.round(d.ms)} ms</span>`
+      : waiting ? `<span class="y">● connecting…</span>`
+      : `<span class="r">● ${esc(d.err || 'offline')}</span>` + (d.lastOk ? `<br><span class="d">last seen ${new Date(d.lastOk).toLocaleTimeString()}</span>` : '');
+    e.st.title = d.ok ? '' : (d.err || '');
+    e.sec.classList.toggle('nodata', !j);
+    if (!j) {
+      e.err.textContent = waiting ? 'connecting…' : (d.err || 'offline');
+      e.err.style.color = waiting ? 'var(--yellow)' : '';
+      e.st.innerHTML = waiting ? '' : `<span class="r">● offline</span>`;
+      return;
+    }
+    renderHeader(e, h, j);
+    if (!S.expanded[h]) return;
+
+    const gpus = j.gpus || [];
+    e.devs.innerHTML = gpus.length
+      ? gpus.map(g => `<div class="dev">${devLines(g, j.kind)}</div>`).join('')
+      : `<div class="dev d">${j.kind === 'error' ? 'collector error: ' + esc(j.error) : 'No supported GPU found on this machine (host stats only).'}</div>`;
+    e.note.textContent = j.kind === 'apple'
+      ? 'Apple Silicon has no per-process GPU memory accounting: processes below are the top users of unified memory (footprint).' +
+        (j.power_metrics ? '' : '  Clock/power need powermetrics: run as root, or allow passwordless sudo for /usr/bin/powermetrics (see README).')
+      : '';
+
+    // charts
+    const want = gpus.map(g => String(g.index));
+    if (Object.keys(e.canv).join() !== want.join()) {
+      e.charts.innerHTML = ''; e.canv = {};
+      for (const k of want) {
+        const div = document.createElement('div'); div.className = 'chart';
+        const cv = document.createElement('canvas'); div.appendChild(cv);
+        e.charts.appendChild(div); e.canv[k] = cv;
+      }
+    }
+    for (const k of want) drawChart(e.canv[k], 'GPU' + k, (S.hist[h] || {})[k] || []);
+
+    // processes
+    const procs = j.procs || [];
+    const tot = {}; for (const g of gpus) tot[g.index] = g.mem_total;
+    const rows = [`<tr><th>PID</th><th>USER</th><th>DEV</th><th>TYPE</th><th>GPU MEM</th><th>CPU</th><th>HOST MEM</th><th class="cmd">Command</th></tr>`];
+    for (const p of procs) {
+      const gm = p.gpu_mem == null ? 'N/A'
+        : Math.round(p.gpu_mem / MiB) + 'MiB' + (tot[p.dev] ? ' ' + lpad(Math.round(100 * p.gpu_mem / tot[p.dev]) + '%', 4) : '');
+      rows.push(`<tr><td>${esc(p.pid)}</td><td>${esc(p.user)}</td><td>${p.dev == null ? '-' : esc(p.dev)}</td><td class="t">${esc(p.type)}</td>` +
+                `<td>${gm}</td><td>${p.cpu == null ? 'N/A' : Math.round(p.cpu) + '%'}</td>` +
+                `<td>${p.host_mem == null ? 'N/A' : Math.round(p.host_mem / MiB) + 'MiB'}</td>` +
+                `<td class="cmd" title="${esc(p.command)}">${esc(p.command)}</td></tr>`);
+    }
+    if (!procs.length) rows.push(`<tr><td colspan="8" class="cmd d">no GPU processes</td></tr>`);
+    e.tbody.innerHTML = rows.join('');
+  }
+
+  const shortModel = m => String(m || '').split('/').pop();
+  function shortCmd(c){
+    const t = String(c || '').trim().split(/\s+/);
+    const base = x => (x || '').split('/').pop();
+    let i = 0;
+    if (/^python[\d.]*$/.test(base(t[0])) && t[1]) { i = 1; if (t[1] === '-m' && t[2]) return base(t[0]) + ' -m ' + t[2]; }
+    return base(t[i]) || c;
+  }
+  function serviceChips(j){
+    const out = [];
+    for (const s of j.services || []) {
+      const port = s.port ? `<i>:${s.port}</i>` : '';
+      const n = v => v == null ? null : Math.round(v);
+      let cls = 'chip', body;
+      if (s.kind === 'plex' || s.kind === 'jellyfin') {
+        // busy when its transcoder holds the GPU
+        const re = s.kind === 'plex' ? /plex transcoder/i : /jellyfin-ffmpeg/i;
+        const tr = (j.procs || []).filter(p => re.test(p.command || '') && (p.gpu_mem || p.dev != null)).length;
+        cls += tr ? ' busy' : '';
+        body = `${s.version ? esc(s.version) + ' ' : ''}${port}${tr ? ` · ${tr} GPU transcode${tr > 1 ? 's' : ''}` : ''}`;
+      } else if (s.kind === 'frigate') {
+        const dec = (j.procs || []).filter(p => /ffmpeg/i.test(p.command || '') && !/jellyfin-ffmpeg/i.test(p.command || '') && p.gpu_mem != null).length;
+        cls += dec ? ' busy' : '';
+        body = `${s.version ? esc(s.version) + ' ' : ''}${port}${s.cameras != null ? ' · ' + esc(s.cameras) + ' cameras' : ''}${s.fps ? ' · ' + esc(s.fps) + ' fps' : ''}${dec ? ` · ${dec} GPU decode${dec > 1 ? 's' : ''}` : ''}`;
+      } else if (s.kind === 'invokeai' || s.kind === 'comfyui') {
+        const busy = s.busy || (s.running || 0) > 0;
+        cls += busy ? ' busy' : '';
+        body = `${s.version ? esc(s.version) + ' ' : ''}${port} · ${busy ? 'generating' : 'idle'}${s.queued ? ' · ' + n(s.queued) + ' queued' : ''}`;
+      } else {
+        const models = s.loaded && s.loaded.length ? s.loaded : (s.models || []);
+        const m = models.length ? esc(shortModel(models[0])) + (models.length > 1 ? ` <i>+${models.length - 1}</i>` : '') : '';
+        const parts = [];
+        if (s.auth && !models.length) { cls += ' lock'; parts.push(s.pinned ? 'API key rejected — check the pinned key' : 'API key needed — pin it in Manage machines'); }
+        if (s.running != null) parts.push(`${n(s.running)} running`);
+        if (s.queued) parts.push(`${n(s.queued)} queued`);
+        if (s.tps) parts.push(`${s.tps} tok/s`);
+        if ((s.running || 0) > 0) cls += ' busy';
+        body = `${m} ${port}${parts.length ? ' · ' + parts.join(' · ') : ''}`;
+        cls += '" title="' + esc(models.join(', '));
+      }
+      out.push(`<span class="${cls}"><span class="dot"></span><b>${esc(s.name || s.kind)}</b>${body}</span>`);
+    }
+    const kinds = new Set((j.services || []).map(x => x.kind));
+    if (!kinds.has('frigate')) {
+      const ff = (j.procs || []).filter(p => /(^|\/)ffmpeg\b/i.test((p.command || '').split(' ')[0]) && !/jellyfin-ffmpeg/i.test(p.command || '') && p.gpu_mem != null);
+      if (ff.length) {
+        const tot = ff.reduce((a, p) => a + (p.gpu_mem || 0), 0);
+        const cam = ff.some(p => /rtsp:|rtmp:/i.test(p.command || ''));
+        out.push(`<span class="chip proc busy" title="${esc(ff.map(p => p.command).join('\n'))}"><span class="dot"></span><b>ffmpeg</b>${ff.length} GPU stream${ff.length > 1 ? 's' : ''}${cam ? ' (cameras, likely Frigate)' : ''} <i>· ${gi1(tot)}</i></span>`);
+      }
+    }
+    if (!out.length) {   // nothing recognised: show the biggest GPU / memory user instead
+      const ps = (j.procs || []).slice().sort((a, b) => ((b.gpu_mem || b.host_mem || 0) - (a.gpu_mem || a.host_mem || 0)));
+      const p = ps[0];
+      const sz = p ? (p.gpu_mem != null ? p.gpu_mem : p.host_mem) : 0;
+      if (p && sz > 1073741824) out.push(`<span class="chip proc" title="${esc(p.command)}"><b>process</b>${esc(shortCmd(p.command))} <i>· ${gi1(sz)}</i></span>`);
+    }
+    return out.join('');
+  }
+
+  function renderTotals(){
+    const box = document.getElementById('totals');
+    let on = 0, gpus = 0, used = 0, tot = 0, pw = 0, pwKnown = false, run = 0, que = 0, tps = 0;
+    for (const h of S.hosts) {
+      const d = S.data[h];
+      if (!d || !d.ok || !d.j) continue;
+      on++;
+      for (const g of d.j.gpus || []) {
+        gpus++; used += g.mem_used || 0; tot += g.mem_total || 0;
+        if (g.power != null) { pw += g.power; pwKnown = true; }
+      }
+      for (const s of d.j.services || []) { run += s.running || 0; que += s.queued || 0; tps += s.tps || 0; }
+    }
+    if (!S.hosts.length) { box.innerHTML = ''; return; }
+    const pct = tot ? Math.round(100 * used / tot) : 0;
+    box.innerHTML =
+      `<div class="t"><span>MACHINES</span><span>${on} / ${S.hosts.length} online</span></div>` +
+      `<div class="t"><span>GPUS</span><span>${gpus}</span></div>` +
+      `<div class="t tbar"><span class="mt" style="display:block"><span class="ml" style="display:flex"><span>GPU MEMORY (ALL)</span><b>${gi1(used)} / ${gi1(tot)}</b></span>` +
+        `<span class="segs" style="display:flex"><span class="track mem" style="display:block"><span class="fill" style="display:block;background:var(--green);width:${pct}%"></span></span></span></span>` +
+        `<span style="font-size:11px;color:var(--dim)">${gi1(Math.max(0, tot - used))} free · ${pct}%</span></div>` +
+      `<div class="t"><span>GPU POWER</span><span>${pwKnown ? Math.round(pw) + ' W' : 'N/A'}</span></div>` +
+      `<div class="t"><span>REQUESTS</span><span>${Math.round(run)} running${que ? ' · ' + Math.round(que) + ' queued' : ''}</span></div>` +
+      `<div class="t"><span>GENERATING</span><span>${tps ? tps.toFixed(1) + ' tok/s' : '—'}</span></div>`;
+  }
+
+  // drag the ⠿ handle to reorder machines; order is saved with the host list
+  let dragHost = null;
+  function wireDrag(sec, h){
+    const handle = sec.querySelector('.drag');
+    handle.onclick = ev => ev.stopPropagation();
+    handle.addEventListener('dragstart', ev => {
+      dragHost = h; sec.classList.add('dragging');
+      try { ev.dataTransfer.setData('text/plain', h); ev.dataTransfer.effectAllowed = 'move'; ev.dataTransfer.setDragImage(sec, 20, 20); } catch(e) {}
+    });
+    handle.addEventListener('dragend', () => {
+      dragHost = null; sec.classList.remove('dragging');
+      document.querySelectorAll('.drop-before,.drop-after').forEach(x => x.classList.remove('drop-before', 'drop-after'));
+    });
+    sec.addEventListener('dragover', ev => {
+      if (!dragHost || dragHost === h) return;
+      ev.preventDefault();
+      const r = sec.getBoundingClientRect(), after = ev.clientY > r.top + r.height / 2;
+      sec.classList.toggle('drop-after', after); sec.classList.toggle('drop-before', !after);
+    });
+    sec.addEventListener('dragleave', () => sec.classList.remove('drop-before', 'drop-after'));
+    sec.addEventListener('drop', async ev => {
+      ev.preventDefault();
+      const after = sec.classList.contains('drop-after');
+      sec.classList.remove('drop-before', 'drop-after');
+      if (!dragHost || dragHost === h) return;
+      const list = S.hosts.filter(x => x !== dragHost);
+      list.splice(list.indexOf(h) + (after ? 1 : 0), 0, dragHost);
+      S.hosts = list; dragHost = null;
+      build(); await saveHosts();
+    });
+  }
+
+  // pinned services (hub mode)
+  function renderPins(){
+    const box = document.getElementById('pinsBox');
+    if (S.mode !== 'hub') { box.hidden = true; return; }
+    box.hidden = false;
+    const sel = document.getElementById('pinHost'), cur = sel.value;
+    sel.innerHTML = S.hosts.map(h => `<option value="${esc(h)}">${esc((S.data[h] && S.data[h].j && S.data[h].j.hostname) || h)} (${esc(h)})</option>`).join('');
+    if (S.hosts.includes(cur)) sel.value = cur;
+    const items = [];
+    for (const [h, list] of Object.entries(S.pins || {}))
+      list.forEach((p, i) => items.push(`<li>${esc((S.data[h] && S.data[h].j && S.data[h].j.hostname) || h)} · <b>${esc(p.name || 'service')}</b> ${esc(p.url)}${p.has_key ? ' <span class="d">(key set)</span>' : ''}<span class="x" data-h="${esc(h)}" data-i="${i}">✕</span></li>`));
+    const ul = document.getElementById('pinList');
+    ul.innerHTML = items.join('') || '<li class="d">none</li>';
+    ul.querySelectorAll('.x').forEach(x => x.onclick = () => {
+      const h = x.dataset.h, i = +x.dataset.i;
+      const pins = JSON.parse(JSON.stringify(S.pins || {}));
+      pins[h].splice(i, 1);
+      savePins(pins);
+    });
+  }
+  async function savePins(pins){
+    try {
+      const r = await api('/config', {method:'POST', headers:{'Content-Type':'application/json'},
+                                      body: JSON.stringify({hosts: S.hosts, pins})});
+      if (r.ok) { const j = await r.json(); S.pins = j.pins || {}; }
+    } catch(e) {}
+    renderPins();
+  }
+
+  function renderHeader(e, h, j){
+    e.hn.textContent = j.hostname || h;
+    e.addr.textContent = h;
+    const gpus = j.gpus || [];
+    e.sec.classList.toggle('nogpu', !gpus.length);
+    // badge
+    let badge = '<span class="badge no">no GPU</span>';
+    if (j.kind === 'apple' && gpus[0]) badge = `<span class="badge ap" title="${esc(gpus[0].name)}">${esc(gpus[0].name.replace(/^Apple /, ''))} · ${esc((gpus[0].bus || '').replace('-core GPU', ' cores'))}</span>`;
+    else if (gpus.length) {
+      const names = [...new Set(gpus.map(g => g.name.replace(/^NVIDIA /, '')))];
+      badge = `<span class="badge nv" title="${esc(names.join(', '))}">${gpus.length > 1 ? gpus.length + '× ' : ''}${esc(names.join(' + '))}</span>`;
+    }
+    if (e.badge.innerHTML !== badge) e.badge.innerHTML = badge;
+    // GPU usage: one segment per GPU
+    if (e.gsegs.children.length !== Math.max(1, gpus.length)) {
+      e.gsegs.innerHTML = Array.from({length: Math.max(1, gpus.length)}, () => '<div class="track"><div class="fill" style="width:0"></div></div>').join('');
+    }
+    const utils = gpus.map(g => g.util).filter(v => v != null);
+    gpus.forEach((g, i) => {
+      const f = e.gsegs.children[i].firstChild;
+      f.style.width = (g.util || 0) + '%';
+      e.gsegs.children[i].title = `GPU${g.index}: ${g.util == null ? 'N/A' : Math.round(g.util) + '%'}`;
+    });
+    e.gv.textContent = utils.length ? (gpus.length > 1
+      ? `avg ${Math.round(utils.reduce((a, b) => a + b, 0) / utils.length)}%  max ${Math.round(Math.max(...utils))}%`
+      : Math.round(utils[0]) + '%') : (gpus.length ? 'N/A' : '—');
+    // GPU memory (summed)
+    const used = gpus.reduce((a, g) => a + (g.mem_used || 0), 0);
+    const tot = gpus.reduce((a, g) => a + (g.mem_total || 0), 0);
+    e.mlab.textContent = j.kind === 'apple' ? 'GPU MEM (wired)' : 'VRAM';
+    e.mfill.style.width = tot ? Math.min(100, 100 * used / tot) + '%' : '0';
+    e.mv.textContent = tot ? `${gi1(used)} / ${gi1(tot)}` : '—';
+    e.mf.textContent = tot ? `${gi1(Math.max(0, tot - used))} free · ${Math.round(100 * used / tot)}%` : '';
+    // power / temp
+    const pows = gpus.map(g => g.power).filter(v => v != null);
+    const lims = gpus.map(g => g.power_limit).filter(v => v != null);
+    const temps = gpus.map(g => g.temp).filter(v => v != null);
+    const pw = pows.length ? Math.round(pows.reduce((a, b) => a + b, 0)) + (lims.length === pows.length ? ` / ${Math.round(lims.reduce((a, b) => a + b, 0))}` : '') + ' W' : 'N/A';
+    let tline;
+    if (temps.length) { const t = Math.max(...temps); tline = `<span class="${t >= 85 ? 'r' : t >= 75 ? 'y' : 'g'}">${Math.round(t)}°C</span>${gpus.length > 1 ? ' <span class="d">max</span>' : ''}`; }
+    else tline = j.kind === 'apple' ? (gpus[0] && gpus[0].thermal ? esc(gpus[0].thermal) : 'N/A') : 'N/A';
+    e.pw.innerHTML = gpus.length ? `<span class="k">POW</span>${pw}<br><span class="k">${j.kind === 'apple' ? 'THRM' : 'TEMP'}</span>${tline}` : '';
+    // host CPU / RAM
+    const ho = j.host || {};
+    const chips = serviceChips(j);
+    if (e.svcs.innerHTML !== chips) e.svcs.innerHTML = chips;
+    e.sy.innerHTML = `<span class="k">CPU</span>${ho.cpu == null ? 'N/A' : Math.round(ho.cpu) + '%'}<br>` +
+                     `<span class="k">RAM</span>${ho.mem_total ? gi1(ho.mem_used) + ' / ' + gi1(ho.mem_total) : 'N/A'}`;
+  }
+
+  function drawChart(cv, label, pts){
+    const dpr = window.devicePixelRatio || 1;
+    const w = cv.clientWidth, h = cv.clientHeight;
+    if (!w || !h) return;
+    if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
+      cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+    }
+    const x = cv.getContext('2d');
+    x.setTransform(dpr, 0, 0, dpr, 0, 0);
+    x.clearRect(0, 0, w, h);
+    x.font = '12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace';
+    const L = 30, R = 12, T = 6, B = 18;
+    const pw = w - L - R, ph = h - T - B;
+    // axes
+    x.fillStyle = '#e4e4e4'; x.textAlign = 'right'; x.textBaseline = 'middle';
+    for (const v of [100, 75, 50, 25, 0]) x.fillText(String(v), L - 5, T + ph * (1 - v / 100));
+    x.strokeStyle = '#cfcfcf'; x.lineWidth = 1;
+    x.strokeRect(L + .5, T + .5, pw - 1, ph - 1);
+    x.textAlign = 'center'; x.textBaseline = 'top';
+    for (let i = 0; i <= 4; i++) {
+      const s = WINDOW - i * WINDOW / 4;
+      const lbl = s === 0 ? '0' : s < 60 ? s + 's' : (s % 60 ? Math.floor(s / 60) + 'm' + String(Math.round(s % 60)).padStart(2, '0') : s / 60 + 'm');
+      x.fillText(lbl, L + pw * i / 4, T + ph + 3);
+    }
+    // legend
+    x.textAlign = 'left'; x.textBaseline = 'top';
+    x.fillStyle = '#3cc8e6'; x.fillText(label + ' %', L + 6, T + 4);
+    x.fillStyle = '#e6d24a'; x.fillText(label + ' mem%', L + 6, T + 19);
+    // series
+    const now = Date.now();
+    const line = (idx, color) => {
+      x.beginPath(); x.strokeStyle = color; x.lineWidth = 1.6;
+      let started = false;
+      for (const p of pts) {
+        const v = p[idx];
+        if (v == null) { started = false; continue; }
+        const age = (now - p[0]) / 1000;
+        if (age > WINDOW) continue;
+        const px = L + pw * (1 - age / WINDOW), py = T + ph * (1 - Math.max(0, Math.min(100, v)) / 100);
+        if (!started) { x.moveTo(px, py); started = true; } else x.lineTo(px, py);
+      }
+      x.stroke();
+    };
+    x.save(); x.beginPath(); x.rect(L + 1, T + 1, pw - 2, ph - 2); x.clip();
+    line(2, '#e6d24a');
+    line(1, '#3cc8e6');
+    x.restore();
+  }
+
+  // ---------- polling ----------
+  function pushHist(h, j){
+    const H = S.hist[h] || (S.hist[h] = {});
+    const now = Date.now();
+    for (const g of j.gpus || []) {
+      const k = String(g.index);
+      const arr = H[k] || (H[k] = []);
+      const mp = (g.mem_used != null && g.mem_total) ? 100 * g.mem_used / g.mem_total : null;
+      arr.push([now, g.util, mp]);
+      while (arr.length && now - arr[0][0] > KEEP * 1000) arr.shift();
+    }
+  }
+  async function seedHistory(h){
+    try {
+      const r = await fetch(url(h, 'history'), {cache:'no-store', credentials:'same-origin'});
+      if (!r.ok) return;
+      const j = await r.json();
+      const now = Date.now();
+      const H = S.hist[h] || (S.hist[h] = {});
+      for (const [k, pts] of Object.entries((j && j.gpus) || {})) {
+        if (!/^\d{1,2}$/.test(k)) continue;
+        const cur = H[k] || [];
+        const first = cur.length ? cur[0][0] : Infinity;
+        if (!Array.isArray(pts)) continue;
+        const older = pts.filter(Array.isArray).map(p => [now - (numOr(p[0]) || 0) * 1000, numOr(p[1]), numOr(p[2])]).filter(p => p[0] < first - 200 && now - p[0] <= KEEP * 1000);
+        H[k] = older.concat(cur);
+      }
+    } catch(e) {}
+  }
+  async function poll(h){
+    if (S.inflight[h]) return;
+    S.inflight[h] = true;
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), Math.max(3000, S.interval * 2));
+    const t0 = performance.now();
+    const prev = S.data[h] || {};
+    try {
+      const r = S.served ? await api(url(h, 'stats'), {signal: ctrl.signal, cache: 'no-store'})
+                         : await fetch(url(h, 'stats'), {signal: ctrl.signal, cache: 'no-store'});
+      if (!r.ok) {
+        let msg = r.status === 403 ? 'not in host list' : r.status === 502 ? 'unreachable' : 'HTTP ' + r.status;
+        try { const b = await r.json(); if (b && b.error) msg = strOr(b.error, 300); } catch(e) {}
+        const er = new Error(msg); er.known = true; throw er;
+      }
+      const j = clean(await r.json());
+      const firstTime = !prev.lastOk;
+      S.data[h] = {ok: true, j, ms: performance.now() - t0, lastOk: Date.now()};
+      pushHist(h, j);
+      if (firstTime) seedHistory(h);
+    } catch(err) {
+      S.data[h] = Object.assign({}, prev, {ok: false, err: err.name === 'AbortError' ? 'timeout' : (err.known ? err.message : 'unreachable')});
+    } finally {
+      clearTimeout(to);
+      S.inflight[h] = false;
+      render(h);
+      renderTotals();
+    }
+  }
+  function pollAll(){ for (const h of S.hosts) poll(h); }
+  function restart(){
+    clearInterval(S.timer);
+    S.timer = setInterval(pollAll, S.interval);
+    pollAll();
+  }
+
+  // ---------- init ----------
+  (async () => {
+    S.expanded = store.get('expanded', {});
+    S.interval = store.get('interval', 1000);
+    const compact = store.get('compact', false);
+    document.getElementById('interval').value = String(S.interval);
+    document.getElementById('compact').checked = compact;
+    WINDOW = store.get('window', 60);
+    document.getElementById('win').value = String(WINDOW);
+    document.getElementById('win').onchange = ev => { WINDOW = +ev.target.value; store.set('window', WINDOW); for (const h of S.hosts) render(h); };
+    document.body.classList.toggle('compact', compact);
+
+    await loadHosts();
+    build();
+    restart();
+
+    const inp = document.getElementById('addHost');
+    document.getElementById('addBtn').onclick = () => { addHost(inp.value); inp.value = ''; };
+    inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') { addHost(inp.value); inp.value = ''; } });
+    document.getElementById('interval').onchange = ev => { S.interval = +ev.target.value; store.set('interval', S.interval); restart(); };
+    document.getElementById('compact').onchange = ev => {
+      document.body.classList.toggle('compact', ev.target.checked); store.set('compact', ev.target.checked);
+      for (const h of S.hosts) render(h);
+    };
+    window.addEventListener('resize', () => { for (const h of S.hosts) render(h); });
+    document.getElementById('expAll').onclick = () => S.hosts.forEach(h => setExpanded(h, true));
+    document.getElementById('colAll').onclick = () => S.hosts.forEach(h => setExpanded(h, false));
+    const kp = document.getElementById('keyPanel');
+    const mb = document.getElementById('manageBtn');
+    document.getElementById('pinAdd').onclick = () => {
+      const h = document.getElementById('pinHost').value, url = document.getElementById('pinUrl').value.trim();
+      if (!h || !/^https?:\/\//.test(url)) { document.getElementById('pinUrl').focus(); return; }
+      const pins = JSON.parse(JSON.stringify(S.pins || {}));
+      (pins[h] = pins[h] || []).push({name: document.getElementById('pinName').value.trim(), url, key: document.getElementById('pinKey').value});
+      ['pinName', 'pinUrl', 'pinKey'].forEach(id => document.getElementById(id).value = '');
+      savePins(pins);
+    };
+    const setManage = on => { kp.hidden = !on; document.body.classList.toggle('manage', on); mb.classList.toggle('on', on); if (on) renderPins();
+                              mb.textContent = on ? 'Done' : 'Manage machines'; if (on) inp.focus(); };
+    mb.onclick = () => setManage(kp.hidden);
+    if (!S.hosts.length) setManage(true);
+    const copy = async (t) => {
+      try { await navigator.clipboard.writeText(t); }
+      catch(e) { const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select();
+                 try { document.execCommand('copy'); } catch(_) {} ta.remove(); }
+      const c = document.getElementById('copied'); c.textContent = 'copied'; setTimeout(() => c.textContent = '', 1500);
+    };
+    document.getElementById('copyCmd').onclick = () => copy(document.getElementById('authCmd').textContent);
+    document.getElementById('copyTok').onclick = () => copy(S.apiToken || '');
+    document.getElementById('logoutBtn').onclick = async () => {
+      try { await api('/logout', {method: 'POST'}); } catch(e) {}
+      location.href = '/login';
+    };
+    document.getElementById('copyKey').onclick = () => copy(S.pubkey);
+    // a served page re-reads the shared host list now and then, so other browsers' edits show up
+    if (S.served) setInterval(async () => {
+      try {
+        const j = await (await api('/config', {cache:'no-store'})).json();
+        if (Array.isArray(j.hosts) && j.hosts.join() !== S.hosts.join()) { S.hosts = j.hosts; build(); }
+      } catch(e) {}
+    }, 15000);
+  })();
+})();
+</script>
+</body>
+</html>

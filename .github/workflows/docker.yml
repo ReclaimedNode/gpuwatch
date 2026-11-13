@@ -1,0 +1,89 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Syntax checks
+        run: |
+          python3 -m py_compile gpuwatch.py
+          node -e "const s=require('fs').readFileSync('dashboard.html','utf8'); new Function(s.split('<script>')[1].split('</script>')[0]);"
+          sh -n docker/entrypoint.sh install.sh
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build test image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: gpuwatch:test
+
+      - name: Smoke test (hardened container, demo fleet)
+        run: |
+          set -e
+          docker run -d --name gw -p 9180:9180 --read-only --tmpfs /tmp \
+            --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add SETUID --cap-add SETGID \
+            --security-opt no-new-privileges:true \
+            -e GPUWATCH_DEMO_FLEET=1 -e GPUWATCH_PASSWORD=ci-test-passphrase -v gwdata:/data gpuwatch:test
+          for i in $(seq 1 30); do curl -fsS localhost:9180/healthz >/dev/null && break; sleep 1; done
+          echo "-- anonymous requests are refused"
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:9180/config)" = 401
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:9180/metrics)" = 401
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'X-Gpuwatch: 1' -H 'Content-Type: application/json' -d '{"hosts":[]}' localhost:9180/config)" = 403
+          echo "-- security headers"
+          curl -s -D - -o /dev/null localhost:9180/login | tee /tmp/h
+          grep -qi "content-security-policy: default-src 'none'; script-src 'sha256-" /tmp/h
+          grep -qi "x-frame-options: DENY" /tmp/h
+          if grep -qi "access-control-allow-origin" /tmp/h; then echo "unexpected CORS header"; exit 1; fi
+          echo "-- login works with the configured passphrase"
+          curl -s -c jar -o /dev/null -d 'password=ci-test-passphrase' localhost:9180/login
+          test "$(curl -s -b jar -o /dev/null -w '%{http_code}' localhost:9180/config)" = 200
+          sleep 3
+          curl -s -b jar "localhost:9180/proxy/10.0.0.30/stats" | python3 -c "import json,sys; j=json.load(sys.stdin); assert len(j['gpus'])==4, j"
+          echo "-- runs as nobody"
+          docker top gw -eo user,args | tee /tmp/top
+          grep "gpuwatch.py" /tmp/top | grep -q "^nobody"
+          docker logs gw
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short
+
+      - name: Build and push (amd64 + arm64)
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

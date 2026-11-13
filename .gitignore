@@ -1,0 +1,9 @@
+# runtime state: SSH private key, known_hosts, host list, password hash
+data/
+hosts.json
+auth.json
+.env
+*.bak
+__pycache__/
+*.pyc
+.DS_Store
