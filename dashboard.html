@@ -313,13 +313,28 @@
     return o;
   }
   // all writes carry X-Gpuwatch (forces a same-origin request); a lost session sends you to the login page
+  // gpuwatch itself never redirects these requests, so a redirect means a sign-in proxy in front of it (authentik,
+  // Authelia, ...) wants a fresh sign-in. A background request can't follow that; a full page load can.
   async function api(path, opts){
     opts = opts || {};
     opts.headers = Object.assign({'X-Gpuwatch': '1'}, opts.headers || {});
     opts.credentials = 'same-origin';
+    opts.redirect = 'manual';
     const r = await fetch(path, opts);
+    if (r.type === 'opaqueredirect') {
+      reauth();
+      const er = new Error('sign-in expired, reloading…'); er.known = true; throw er;
+    }
     if (r.status === 401 && S.served) { location.href = '/login'; throw new Error('signed out'); }
     return r;
+  }
+  // reload so the proxy can sign the browser in again; at most once a minute, so a proxy that keeps redirecting can't loop it
+  function reauth(){
+    try {
+      if (Date.now() - (+sessionStorage.getItem('gw_reauth') || 0) < 60000) return;
+      sessionStorage.setItem('gw_reauth', String(Date.now()));
+    } catch(e) { return; }
+    location.reload();
   }
 
   // ---------- host list ----------

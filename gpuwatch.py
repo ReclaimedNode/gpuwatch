@@ -40,7 +40,7 @@ import urllib.request
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 HERE = os.path.dirname(os.path.abspath(__file__))
 MiB = 1024 ** 2
 GiB = 1024 ** 3

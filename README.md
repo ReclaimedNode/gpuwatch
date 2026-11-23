@@ -142,6 +142,7 @@ The page reads everything through the hub (`/proxy/<machine>/stats`), so it work
 - **NVIDIA box shows no GPUs:** run `nvidia-smi` as the SSH user.
 - **Mac shows N/A for GPU% / memory:** `ioreg -r -d 1 -w 0 -c IOAccelerator | grep PerformanceStatistics` should print values.
 - **A service shows "API key needed":** pin it under **Manage machines → Pinned services** with `http://localhost:<port>` and its key.
+- **Behind a sign-in proxy (authentik, Authelia, ...):** when the proxy's session expires, the open page reloads itself so the proxy can sign you in again (at most once a minute).
 - **Updating:** `docker compose pull && docker compose up -d`.
 
 ## License
