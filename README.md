@@ -94,6 +94,13 @@ Want to look around first? Set `GPUWATCH_DEMO_FLEET=1` in `.env` to get six simu
 | `GPUWATCH_DEMO_FLEET` | off | `1` = simulated machines |
 | `GPUWATCH_PORT` | `9180` | listen port inside the container |
 
+Agent-side settings (read by the `gpuwatch` process on each machine, e.g. set in its environment; not the hub container):
+
+| Variable | Default | |
+|---|---|---|
+| `GPUWATCH_RESCAN_HOURS` | `6` | full scan of listening ports for model servers; between scans only known services are checked (TCP connect) |
+| `GPUWATCH_SKIP_PORTS` | none | extra comma-separated ports never probed (arr stack, FlareSolverr and similar are skipped by default) |
+
 The `data/` volume holds the hub's SSH key, known hosts, machine list, pins and the password hash. Keep it private and back it up.
 
 ## Prometheus and Homepage

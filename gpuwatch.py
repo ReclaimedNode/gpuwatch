@@ -494,6 +494,21 @@ KNOWN_PORTS = [8000, 8001, 8002, 8003, 8080, 8081, 8188, 8880, 8881, 9090, 11434
 SKIP_PORTS = {22, 25, 53, 80, 111, 139, 443, 445, 548, 631, 2049, 3306, 5353, 5432, 5900, 6379, 9100, 9180}
 if sys.platform == "darwin":
     SKIP_PORTS |= {3283, 5000, 7000, 49152}   # Apple Remote Desktop, AirPlay Receiver (5000/7000)
+# home-lab apps that are never model servers: the arr stack, FlareSolverr, Profilarr, qui (TrueNAS)
+SKIP_PORTS |= {5055, 6767, 6868, 7476, 7878, 8191, 8789, 8989, 9696}
+SKIP_PORTS |= {int(p) for p in os.environ.get("GPUWATCH_SKIP_PORTS", "").split(",") if p.strip().isdigit()}
+
+
+def _env_float(name, default):
+    try:
+        return float(os.environ.get(name, "") or default)
+    except ValueError:
+        return float(default)
+
+
+RESCAN_SECONDS = max(60.0, _env_float("GPUWATCH_RESCAN_HOURS", 6) * 3600)   # full port scan interval
+CHECK_SECONDS = 30      # TCP liveness check of services already found
+DROP_AFTER = 3          # failed checks before a service is dropped until the next full scan
 _OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 KIND_LABEL = {"vllm": "vLLM", "llamacpp": "llama.cpp", "ollama": "Ollama", "openai": "OpenAI API",
               "invokeai": "InvokeAI", "comfyui": "ComfyUI", "plex": "Plex", "jellyfin": "Jellyfin", "frigate": "Frigate",
@@ -701,14 +716,22 @@ def identify(base, key=None, loose=False):
 
 
 class Services:
-    """Finds model/image servers on this machine and polls their load."""
+    """Finds model/image servers on this machine and polls their load.
+
+    A full scan (every listening port plus KNOWN_PORTS) runs once at startup and then every
+    RESCAN_SECONDS. Between scans nothing is probed over HTTP for discovery: the services already
+    found get a cheap TCP connect every CHECK_SECONDS, and one that stops listening is dropped after
+    DROP_AFTER failed checks. A port that appears later is picked up by the next full scan (or when
+    the hub restarts this agent, e.g. after the host list or pins change).
+    """
 
     def __init__(self, pins=None):
         self.pins = pins or []
         self.lock = threading.Lock()
         self.found = []          # list of service dicts (with private _base/_key)
+        self.fails = {}          # base -> consecutive failed TCP checks
+        self.last_full = 0.0     # time the last full scan started
         self.counters = {}       # base -> (tokens, time)
-        self.negative = {}       # base -> time it was last found to be "not a known service"
         self.ttft_hist = {}      # base -> deque of (time, TTFT histogram buckets)
         threading.Thread(target=self._loop, daemon=True).start()
 
@@ -720,18 +743,42 @@ class Services:
         return dict(getattr(self, "_diag", {}))
 
     def _loop(self):
-        last = 0
+        last_check = 0.0
         while True:
             try:
-                if time.time() - last > 30:
+                now = time.time()
+                if now - self.last_full > RESCAN_SECONDS:
                     self._discover()
-                    last = time.time()
+                elif now - last_check > CHECK_SECONDS:
+                    self._check_alive()
+                    last_check = time.time()
                 self._poll()
             except Exception:
                 pass
             time.sleep(2)
 
+    def _check_alive(self):
+        """TCP connect only (no HTTP) to each service already found."""
+        with self.lock:
+            items = [f["_base"] for f in self.found]
+        dropped = set()
+        for base in items:
+            u = urllib.parse.urlsplit(base)
+            port = u.port or (443 if u.scheme == "https" else 80)
+            try:
+                socket.create_connection((u.hostname, port), timeout=1).close()
+                self.fails.pop(base, None)
+            except OSError:
+                self.fails[base] = self.fails.get(base, 0) + 1
+                if self.fails[base] >= DROP_AFTER:
+                    dropped.add(base)
+                    self.fails.pop(base, None)
+        if dropped:
+            with self.lock:
+                self.found = [f for f in self.found if f["_base"] not in dropped]
+
     def _discover(self):
+        self.last_full = time.time()     # set before scanning so a failing scan is not retried every pass
         ports = listening_ports()
         self._diag = {"listening": len(ports), "named": sum(1 for _, (h, p) in ports.items() if p)}
         cands = {}
@@ -742,21 +789,13 @@ class Services:
         for port in KNOWN_PORTS:
             cands.setdefault(port, ("127.0.0.1", ""))
         items = sorted(cands.items())[:200]
-        now = time.time()
-        known = {f["_base"] for f in self.found}
 
         def probe(item):
             port, (host, proc) = item
             base = "http://%s:%d" % (host, port)
-            # ports that weren't a recognised service are re-checked every 10 min, not every pass
-            if base not in known and now - self.negative.get(base, 0) < 600:
-                return None
             r = identify(base, loose=port in KNOWN_PORTS)
             if r:
                 r.update(port=port, proc=proc, _base=base)
-                self.negative.pop(base, None)
-            else:
-                self.negative[base] = now
             return r
 
         found = []
@@ -767,7 +806,6 @@ class Services:
         except Exception:
             found = [r for r in map(probe, items) if r]
         # pinned services (from the dashboard): always shown, may carry an API key
-        pinned_ports = set()
         for pin in self.pins[:8]:
             url = str(pin.get("url", "")).rstrip("/")
             if not url or not LOCAL_URL_RE.match(url):
@@ -777,7 +815,6 @@ class Services:
             m = re.search(r":(\d+)$", url.split("//")[-1])
             port = int(m.group(1)) if m else None
             r.update(port=port, proc="", pinned=True, name=pin.get("name") or "", _base=url, _key=key)
-            pinned_ports.add(port)
             found = [f for f in found if f.get("port") != port]
             found.append(r)
         for f in found:
@@ -797,6 +834,8 @@ class Services:
                         label = "MLX server"
                 f["name"] = label
         found.sort(key=lambda f: (f.get("port") or 0))
+        self._diag["services"] = len(found)
+        self._diag["last_scan"] = int(time.time())
         with self.lock:
             old = {f["_base"]: f for f in self.found}
             for f in found:   # keep last live numbers until the next poll
@@ -806,6 +845,7 @@ class Services:
                         if k in o:
                             f.setdefault(k, o[k])
             self.found = found
+            self.fails = {}
 
     def _poll(self):
         with self.lock:
