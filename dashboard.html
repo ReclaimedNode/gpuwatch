@@ -113,11 +113,21 @@
   /* ---------- floating detail windows ---------- */
   #wins{position:fixed;inset:0;pointer-events:none;z-index:50}
   .win{position:absolute;pointer-events:auto;width:1080px;height:760px;min-width:420px;min-height:300px;max-width:98vw;max-height:96vh;
-       display:flex;flex-direction:column;border-radius:22px;overflow:hidden;resize:both;
+       display:flex;flex-direction:column;border-radius:22px;overflow:hidden;
        background:rgba(232,235,244,.94);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
        box-shadow:0 30px 80px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.35);
        color:#1d2230;font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif}
   .win.off{filter:grayscale(.6)}
+  /* resize handles: every edge and corner */
+  .rz{position:absolute;z-index:3;touch-action:none}
+  .rz.n,.rz.s{left:18px;right:18px;height:7px;cursor:ns-resize} .rz.n{top:0} .rz.s{bottom:0}
+  .rz.e,.rz.w{top:18px;bottom:18px;width:7px;cursor:ew-resize} .rz.e{right:0} .rz.w{left:0}
+  .rz.ne,.rz.nw,.rz.se,.rz.sw{width:26px;height:26px}   /* the rounded corner clips the outer few px, so these reach well inside */
+  .rz.ne{top:0;right:0;cursor:nesw-resize} .rz.nw{top:0;left:0;cursor:nwse-resize}
+  .rz.sw{bottom:0;left:0;cursor:nesw-resize} .rz.se{bottom:0;right:0;cursor:nwse-resize;width:32px;height:32px}
+  .rz.se::after{content:"";position:absolute;right:9px;bottom:9px;width:12px;height:12px;opacity:.8;
+       background:linear-gradient(135deg,transparent 0 45%,#8a92a6 45% 55%,transparent 55% 70%,#8a92a6 70% 80%,transparent 80%)}
+  .win.sizing{user-select:none}
   .wbar{display:flex;align-items:center;gap:10px;padding:10px 14px 10px 18px;cursor:grab;user-select:none;touch-action:none;
         background:rgba(255,255,255,.55);border-bottom:1px solid rgba(20,30,60,.08)}
   .wbar:active{cursor:grabbing}
@@ -144,7 +154,7 @@
   .wrow2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
   .stat b{font-size:22px;font-weight:700} .stat small{color:#6b7385;margin-left:4px}
   .pbar{height:6px;border-radius:4px;background:#e7e9f1;overflow:hidden;margin-top:8px}
-  .pbar i{display:block;height:100%;border-radius:4px;background:#7c83e8}
+  .pbar i{display:block;height:100%;border-radius:4px;background:#7c83e8;transition:width .4s ease}
   .pbar.g i{background:#5ec8b6}
   .pbar.w i{background:#e8a33d} .pbar.r i{background:#e5534b}
   .prow{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;color:#6b7385}
@@ -160,7 +170,7 @@
   .gt .gh{grid-column:1 / -1;display:flex;align-items:center;gap:8px;font-weight:700}
   .gt .gh .nm{font-weight:500;color:#6b7385;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .gt .gh .tmp{margin-left:auto;font-weight:500;color:#6b7385;font-size:12px}
-  .ring{width:88px;height:88px}
+  .ring{width:88px;height:88px;display:block}
   .ring text{font:600 15px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#1d2230}
   .gt .meters{display:flex;flex-direction:column;gap:6px}
   .gt .mv{font-size:15px;font-weight:600;color:#1d2230}
@@ -174,7 +184,8 @@
   details.wproc th{text-align:left;color:#6b7385;font-weight:600;padding:3px 6px;border-bottom:1px solid #eceef4}
   details.wproc td{padding:3px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   @media (max-width:900px){
-    .win{left:0 !important;top:0 !important;width:100vw !important;height:100vh !important;max-width:100vw;max-height:100vh;border-radius:0;resize:none}
+    .win{left:0 !important;top:0 !important;width:100vw !important;height:100vh !important;max-width:100vw;max-height:100vh;border-radius:0}
+    .rz{display:none}
     .wgrid{grid-template-columns:1fr}
   }
   .keyp{padding:10px 14px;border-bottom:1px solid var(--line);background:#0f1215}
@@ -271,6 +282,10 @@
   const lpad = (s, n) => { s = String(s); return s.length >= n ? s : ' '.repeat(n - s.length) + s; };
   const val = (v, unit, w) => lpad(v == null ? 'N/A' : Math.round(v) + unit, w);
   const id = h => 'h_' + h.replace(/[^\w]/g, '_');
+  // write only when the content changed, so a refresh leaves everything else (scroll position, selection, hover) alone
+  function setHTML(el, html){ if (el && el._h !== html) { el.innerHTML = html; el._h = html; } }
+  function setText(el, t){ t = String(t); if (el && el._t !== t) { el.textContent = t; el._t = t; } }
+  function setW(el, p){ p = (+p || 0).toFixed(1) + '%'; if (el && el._w !== p) { el.style.width = p; el._w = p; } }
 
   // nvtop-style text bar: "||||||      label"
   function tbar(frac, width, label, cls){
@@ -525,9 +540,9 @@
     if (!S.expanded[h]) return;
 
     const gpus = j.gpus || [];
-    e.devs.innerHTML = gpus.length
+    setHTML(e.devs, gpus.length
       ? gpus.map(g => `<div class="dev">${devLines(g, j.kind)}</div>`).join('')
-      : `<div class="dev d">${j.kind === 'error' ? 'collector error: ' + esc(j.error) : 'No supported GPU found on this machine (host stats only).'}</div>`;
+      : `<div class="dev d">${j.kind === 'error' ? 'collector error: ' + esc(j.error) : 'No supported GPU found on this machine (host stats only).'}</div>`);
     e.note.textContent = j.kind === 'apple'
       ? 'Apple Silicon has no per-process GPU memory accounting: processes below are the top users of unified memory (footprint).' +
         (j.power_metrics ? '' : '  Clock/power need powermetrics: run as root, or allow passwordless sudo for /usr/bin/powermetrics (see README).')
@@ -558,7 +573,7 @@
                 `<td class="cmd" title="${esc(p.command)}">${esc(p.command)}</td></tr>`);
     }
     if (!procs.length) rows.push(`<tr><td colspan="8" class="cmd d">no GPU processes</td></tr>`);
-    e.tbody.innerHTML = rows.join('');
+    setHTML(e.tbody, rows.join(''));
   }
 
   const shortModel = m => String(m || '').split('/').pop();
@@ -899,9 +914,10 @@
     if (L.w) el.style.width = L.w + 'px';
     if (L.h) el.style.height = L.h + 'px';
     el.style.zIndex = ++W.z;
-    el.innerHTML = `<div class="wbar"><span class="wt"></span><span class="wsub"></span><span class="wtag"></span><span class="wst"></span><button class="wx" title="close (Esc)">✕</button></div><div class="wbody"></div>`;
+    el.innerHTML = `<div class="wbar"><span class="wt"></span><span class="wsub"></span><span class="wtag"></span><span class="wst"></span><button class="wx" title="close (Esc)">✕</button></div><div class="wbody"></div>` +
+      ['n', 's', 'e', 'w', 'ne', 'nw', 'sw', 'se'].map(d => `<i class="rz ${d}" data-d="${d}"></i>`).join('');
     document.getElementById('wins').appendChild(el);
-    W.open[h] = {el, canv: {}, spark: null};
+    W.open[h] = {el, sig: null, r: null};
     el.addEventListener('pointerdown', () => { el.style.zIndex = ++W.z; });
     el.querySelector('.wx').onclick = () => closeWin(h);
     const bar_ = el.querySelector('.wbar');
@@ -919,11 +935,35 @@
       };
       bar_.addEventListener('pointermove', move); bar_.addEventListener('pointerup', up);
     });
-    // remember a resized window
-    el.addEventListener('pointerup', () => {
-      const w = el.offsetWidth, hh = el.offsetHeight, cur = W.layout[h] || {};
-      if (cur.w !== w || cur.h !== hh) { W.layout[h] = Object.assign(cur, {x: el.offsetLeft, y: el.offsetTop, w, h: hh}); saveLayout(); }
-    });
+    // drag any edge or corner to resize; the size is remembered per machine
+    el.querySelectorAll('.rz').forEach(hd => hd.addEventListener('pointerdown', ev => {
+      if (ev.button) return;
+      ev.preventDefault(); ev.stopPropagation();
+      el.style.zIndex = ++W.z;
+      const dir = hd.dataset.d, sx = ev.clientX, sy = ev.clientY;
+      const x0 = el.offsetLeft, y0 = el.offsetTop, w0 = el.offsetWidth, h0 = el.offsetHeight;
+      const MINW = 420, MINH = 300, maxW = innerWidth * .98, maxH = innerHeight * .96;
+      hd.setPointerCapture(ev.pointerId);
+      el.classList.add('sizing');
+      let raf = 0;
+      const move = e => {
+        const dx = e.clientX - sx, dy = e.clientY - sy;
+        let x = x0, y = y0, w = w0, hh = h0;
+        if (dir.includes('e')) w = Math.max(MINW, Math.min(maxW, w0 + dx));
+        if (dir.includes('s')) hh = Math.max(MINH, Math.min(maxH, h0 + dy));
+        if (dir.includes('w')) { w = Math.max(MINW, Math.min(maxW, w0 - dx)); x = x0 + w0 - w; }
+        if (dir.includes('n')) { hh = Math.max(MINH, Math.min(maxH, h0 - dy)); y = Math.max(0, y0 + h0 - hh); hh = y0 + h0 - y; }
+        el.style.left = x + 'px'; el.style.top = y + 'px'; el.style.width = w + 'px'; el.style.height = hh + 'px';
+        if (!raf) raf = requestAnimationFrame(() => { raf = 0; drawWin(h); });   // graphs follow the new width
+      };
+      const up = () => {
+        hd.removeEventListener('pointermove', move); hd.removeEventListener('pointerup', up); hd.removeEventListener('pointercancel', up);
+        el.classList.remove('sizing');
+        W.layout[h] = {x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight}; saveLayout();
+        drawWin(h);
+      };
+      hd.addEventListener('pointermove', move); hd.addEventListener('pointerup', up); hd.addEventListener('pointercancel', up);
+    }));
     saveLayout();
     renderWin(h);
   }
@@ -945,7 +985,7 @@
     el.querySelector('.wt').textContent = (j && j.hostname) || h;
     el.querySelector('.wsub').textContent = h;
     el.querySelector('.wst').innerHTML = d.ok ? `<span class="dot"></span>live · ${new Date(d.lastOk).toLocaleTimeString()}` : `<span class="dot"></span>${esc(d.err || 'offline')}`;
-    if (!j) { el.querySelector('.wbody').innerHTML = `<div class="wc">${esc(d.err || 'connecting…')}</div>`; return; }
+    if (!j) { w.sig = null; w.r = null; setHTML(el.querySelector('.wbody'), `<div class="wc">${esc(d.err || 'connecting…')}</div>`); return; }
     const gpus = j.gpus || [], svcs = j.services || [], apple = j.kind === 'apple';
     const tag = el.querySelector('.wtag');
     tag.className = 'wtag' + (apple ? ' ap' : '');
@@ -977,60 +1017,87 @@
       return rows.join('');
     }).join('') || `<div class="h"><span>No services detected</span><b></b></div>`;
 
-    const tiles = gpus.map(g => {
-      const mp = pct(g.mem_used, g.mem_total), pp = pct(g.power, g.power_limit);
-      const temp = g.temp != null ? Math.round(g.temp) + '°' : (g.thermal ? esc(g.thermal) : '');
-      return `<div class="gt"><div class="gh">⬢ GPU ${esc(g.index)} <span class="nm">${esc(g.name)}</span><span class="tmp">${temp}</span></div>
-        ${ring(g.util)}
-        <div class="meters">
-          <div class="prow"><span>${apple ? 'GPU MEM (wired)' : 'VRAM'}</span><span>${Math.round(mp)}%</span></div>
-          <div class="mv">${fmtGB(g.mem_used)} / ${fmtGB(g.mem_total)}</div>${bar(mp)}
-          <div class="prow"><span>POWER</span><span>${g.power_limit ? Math.round(pp) + '%' : ''}</span></div>
-          <div class="mv">${g.power == null ? 'N/A' : Math.round(g.power) + (g.power_limit ? ' / ' + Math.round(g.power_limit) : '') + ' W'}</div>${bar(g.power_limit ? pp : 0, 'g')}
-        </div></div>`;
-    }).join('');
-
+    // The body is built once (and again only if the machine's GPU list changes). Every refresh after that
+    // updates just the values that changed, so scrolling, text selection and an open process list stay put.
     const body = el.querySelector('.wbody');
-    const scroll = body.scrollTop;
-    const openProc = body.querySelector('details.wproc') && body.querySelector('details.wproc').open;
-    body.innerHTML = `
+    const sig = j.kind + '|' + gpus.map(g => g.index).join(',');
+    if (w.sig !== sig) {
+      const scroll = body.scrollTop;
+      body.innerHTML = `
       <div class="wgrid">
         <div class="wcol">
           <div class="wc hero"><span class="lab">Node throughput</span>
-            <div class="big">${reported ? tps.toFixed(1) : '—'}<small>${reported ? 'tok/s' : (llm.length ? 'not reported by these servers' : 'no model server found')}</small></div>
+            <div class="big" data-k="big"></div>
             <canvas class="spark"></canvas>
-            <div class="kv3"><div><span>PREFILL</span><b>${llm.some(s => s.prefill_tps != null) ? pre.toFixed(1) + ' tok/s' : '–'}</b></div><div><span>DECODE</span><b>${reported ? tps.toFixed(1) + ' tok/s' : '–'}</b></div><div><span>TTFT p50</span><b>${p50.length ? fmtMs(Math.min(...p50)) : '–'}</b></div></div>
+            <div class="kv3"><div><span>PREFILL</span><b data-k="pre"></b></div><div><span>DECODE</span><b data-k="dec"></b></div><div><span>TTFT p50</span><b data-k="ttft"></b></div></div>
           </div>
           <div class="wrow2">
-            <div class="wc stat"><span class="lab">CPU</span><div><b>${ho.cpu == null ? 'N/A' : Math.round(ho.cpu) + '%'}</b></div>${bar(ho.cpu || 0)}</div>
-            <div class="wc stat"><span class="lab">RAM</span><div><b>${ho.mem_used == null ? 'N/A' : (ho.mem_used / 1073741824).toFixed(1)}</b><small>/ ${ho.mem_total ? (ho.mem_total / 1073741824).toFixed(1) : '?'} GiB</small></div>${bar(pct(ho.mem_used, ho.mem_total))}</div>
+            <div class="wc stat"><span class="lab">CPU</span><div data-k="cpu"></div><div class="pbar"><i data-k="cpubar"></i></div></div>
+            <div class="wc stat"><span class="lab">RAM</span><div data-k="ram"></div><div class="pbar"><i data-k="rambar"></i></div></div>
           </div>
-          <div class="wc"><span class="lab">Serving</span><div class="svl">${svcRows}</div></div>
+          <div class="wc"><span class="lab">Serving</span><div class="svl" data-k="svl"></div></div>
         </div>
         <div class="gpanel"><div class="lab">GPU${gpus.length > 1 ? 's' : ''}</div>
-          <div class="gtiles">${tiles || '<div class="wc">No supported GPU on this machine.</div>'}</div>
+          <div class="gtiles">${gpus.map(g => `<div class="gt"><div class="gh">⬢ GPU ${esc(g.index)} <span class="nm"></span><span class="tmp"></span></div>${ring(null)}<div class="meters"></div></div>`).join('')
+            || '<div class="wc">No supported GPU on this machine.</div>'}</div>
           ${gpus.length ? `<div class="gtot">
-            <div class="prow"><span>${apple ? 'GPU MEMORY' : 'GPU VRAM'}</span><span>${fmtGB(used)} / ${fmtGB(tot)}</span></div>${bar(pct(used, tot))}
-            <div class="prow"><span>POWER</span><span>${pw ? Math.round(pw) + (pl ? ' / ' + Math.round(pl) : '') + ' W' : 'N/A'}</span></div>${bar(pl ? pct(pw, pl) : 0, 'g')}
+            <div class="prow"><span>${apple ? 'GPU MEMORY' : 'GPU VRAM'}</span><span data-k="memtxt"></span></div><div class="pbar"><i data-k="membar"></i></div>
+            <div class="prow"><span>POWER</span><span data-k="powtxt"></span></div><div class="pbar g"><i data-k="powbar"></i></div>
           </div>` : ''}
         </div>
       </div>
-      <div class="whist"></div>
-      <details class="wproc"${openProc ? ' open' : ''}><summary>PROCESSES (${(j.procs || []).length})</summary>
+      <div class="whist">${gpus.map(() => '<div class="chart"><canvas style="width:100%;height:100%"></canvas></div>').join('')}</div>
+      <details class="wproc"><summary data-k="psum"></summary>
         <table><colgroup><col style="width:9ch"><col style="width:11ch"><col style="width:5ch"><col style="width:13ch"><col style="width:7ch"><col></colgroup>
-        <tr><th>PID</th><th>USER</th><th>DEV</th><th>${apple ? 'MEM' : 'GPU MEM'}</th><th>CPU</th><th>COMMAND</th></tr>
-        ${(j.procs || []).map(p => `<tr><td>${esc(p.pid)}</td><td>${esc(p.user)}</td><td>${p.dev == null ? '-' : esc(p.dev)}</td><td>${fmtGB(p.gpu_mem != null ? p.gpu_mem : p.host_mem)}</td><td>${p.cpu == null ? '–' : Math.round(p.cpu) + '%'}</td><td title="${esc(p.command)}">${esc(p.command)}</td></tr>`).join('')}
-        </table></details>`;
-    body.scrollTop = scroll;
-    // history charts (light) + sparkline
-    const hb = body.querySelector('.whist');
-    const cvs = gpus.map(g => {   // lay out every chart first, then draw, so each measures its final width
-      const div = document.createElement('div'); div.className = 'chart';
-      const cv = document.createElement('canvas'); cv.style.width = '100%'; cv.style.height = '100%'; div.appendChild(cv); hb.appendChild(div);
-      return [cv, g];
+        <thead><tr><th>PID</th><th>USER</th><th>DEV</th><th>${apple ? 'MEM' : 'GPU MEM'}</th><th>CPU</th><th>COMMAND</th></tr></thead>
+        <tbody data-k="ptb"></tbody></table></details>`;
+      const r = {};
+      body.querySelectorAll('[data-k]').forEach(x => { r[x.dataset.k] = x; });
+      r.tiles = [...body.querySelectorAll('.gt')].map(t => ({nm: t.querySelector('.nm'), tmp: t.querySelector('.tmp'),
+        arc: t.querySelectorAll('.ring circle')[1], pct: t.querySelector('.ring text'), meters: t.querySelector('.meters')}));
+      r.charts = [...body.querySelectorAll('.whist canvas')];
+      r.spark = body.querySelector('canvas.spark');
+      w.r = r; w.sig = sig; body._h = null;
+      body.scrollTop = scroll;
+    }
+    const r = w.r;
+    setHTML(r.big, `${reported ? tps.toFixed(1) : '—'}<small>${reported ? 'tok/s' : (llm.length ? 'not reported by these servers' : 'no model server found')}</small>`);
+    setText(r.pre, llm.some(s => s.prefill_tps != null) ? pre.toFixed(1) + ' tok/s' : '–');
+    setText(r.dec, reported ? tps.toFixed(1) + ' tok/s' : '–');
+    setText(r.ttft, p50.length ? fmtMs(Math.min(...p50)) : '–');
+    setHTML(r.cpu, `<b>${ho.cpu == null ? 'N/A' : Math.round(ho.cpu) + '%'}</b>`);
+    setW(r.cpubar, Math.max(0, Math.min(100, ho.cpu || 0)));
+    setHTML(r.ram, `<b>${ho.mem_used == null ? 'N/A' : (ho.mem_used / 1073741824).toFixed(1)}</b><small>/ ${ho.mem_total ? (ho.mem_total / 1073741824).toFixed(1) : '?'} GiB</small>`);
+    setW(r.rambar, pct(ho.mem_used, ho.mem_total));
+    setHTML(r.svl, svcRows);
+    const RC = 2 * Math.PI * 36, ARC = 0.8 * RC;
+    gpus.forEach((g, i) => {
+      const t = r.tiles[i]; if (!t) return;
+      const mp = pct(g.mem_used, g.mem_total), pp = pct(g.power, g.power_limit);
+      setText(t.nm, g.name);
+      setText(t.tmp, g.temp != null ? Math.round(g.temp) + '°' : (g.thermal || ''));
+      const dash = `${(ARC * Math.max(0, Math.min(100, g.util || 0)) / 100).toFixed(2)} ${RC}`;
+      if (t.arc._d !== dash) { t.arc.setAttribute('stroke-dasharray', dash); t.arc._d = dash; }
+      setText(t.pct, g.util == null ? 'N/A' : Math.round(g.util) + '%');
+      setHTML(t.meters, `<div class="prow"><span>${apple ? 'GPU MEM (wired)' : 'VRAM'}</span><span>${Math.round(mp)}%</span></div>
+          <div class="mv">${fmtGB(g.mem_used)} / ${fmtGB(g.mem_total)}</div>${bar(mp)}
+          <div class="prow"><span>POWER</span><span>${g.power_limit ? Math.round(pp) + '%' : ''}</span></div>
+          <div class="mv">${g.power == null ? 'N/A' : Math.round(g.power) + (g.power_limit ? ' / ' + Math.round(g.power_limit) : '') + ' W'}</div>${bar(g.power_limit ? pp : 0, 'g')}`);
     });
-    for (const [cv, g] of cvs) drawChart(cv, 'GPU' + g.index, (S.hist[h] || {})[String(g.index)] || [], true);
-    drawSpark(body.querySelector('canvas.spark'), sp);
+    if (gpus.length) {
+      setText(r.memtxt, `${fmtGB(used)} / ${fmtGB(tot)}`); setW(r.membar, pct(used, tot));
+      setText(r.powtxt, pw ? Math.round(pw) + (pl ? ' / ' + Math.round(pl) : '') + ' W' : 'N/A'); setW(r.powbar, pl ? pct(pw, pl) : 0);
+    }
+    setText(r.psum, `PROCESSES (${(j.procs || []).length})`);
+    setHTML(r.ptb, (j.procs || []).map(p => `<tr><td>${esc(p.pid)}</td><td>${esc(p.user)}</td><td>${p.dev == null ? '-' : esc(p.dev)}</td><td>${fmtGB(p.gpu_mem != null ? p.gpu_mem : p.host_mem)}</td><td>${p.cpu == null ? '–' : Math.round(p.cpu) + '%'}</td><td title="${esc(p.command)}">${esc(p.command)}</td></tr>`).join(''));
+    drawWin(h);
+  }
+  // graphs are redrawn on their existing canvases (new data every refresh, and whenever the window changes size)
+  function drawWin(h){
+    const w = W.open[h]; if (!w || !w.r) return;
+    const j = (S.data[h] || {}).j; if (!j) return;
+    (j.gpus || []).forEach((g, i) => { if (w.r.charts[i]) drawChart(w.r.charts[i], 'GPU' + g.index, (S.hist[h] || {})[String(g.index)] || [], true); });
+    drawSpark(w.r.spark, (W.spark || {})[h] || []);
   }
   function drawSpark(cv, pts){
     if (!cv) return;
@@ -1053,7 +1120,7 @@
     document.getElementById('compact').checked = compact;
     WINDOW = store.get('window', 60);
     document.getElementById('win').value = String(WINDOW);
-    document.getElementById('win').onchange = ev => { WINDOW = +ev.target.value; store.set('window', WINDOW); for (const h of S.hosts) render(h); };
+    document.getElementById('win').onchange = ev => { WINDOW = +ev.target.value; store.set('window', WINDOW); for (const h of S.hosts) { render(h); drawWin(h); } };
     document.body.classList.toggle('compact', compact);
 
     await loadHosts();
@@ -1070,7 +1137,7 @@
       document.body.classList.toggle('compact', ev.target.checked); store.set('compact', ev.target.checked);
       for (const h of S.hosts) render(h);
     };
-    window.addEventListener('resize', () => { for (const h of S.hosts) render(h); });
+    window.addEventListener('resize', () => { for (const h of S.hosts) { render(h); drawWin(h); } });
     document.getElementById('expAll').onclick = () => S.hosts.forEach(h => setExpanded(h, true));
     document.getElementById('colAll').onclick = () => S.hosts.forEach(h => setExpanded(h, false));
     const kp = document.getElementById('keyPanel');
